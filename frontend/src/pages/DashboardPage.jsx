@@ -5,12 +5,14 @@ import { fetchPredictionHistory } from "../services/diagnosisService";
 import { formatName } from "../utils/formatName";
 
 function scanLabel(scanType) {
+  if (scanType === "brain_mri") return "Brain MRI";
   if (scanType === "lung_ct") return "Lung CT";
   return "Unknown scan";
 }
 
 function diseaseFocus(row) {
   if (row.diseaseType) return row.diseaseType;
+  if (row.scanType === "brain_mri") return "Four-class brain tumor MRI classification";
   if (row.scanType === "lung_ct") return "Five-class lung cancer classification";
   return "Not recorded";
 }
@@ -34,6 +36,12 @@ export default function DashboardPage() {
   const patientCount = new Set(
     analyses.map((item) => item.patientId).filter(Boolean),
   ).size;
+  const brainMriCount = analyses.filter(
+    (item) => item.scanType === "brain_mri",
+  ).length;
+  const lungCtCount = analyses.filter(
+    (item) => item.scanType === "lung_ct",
+  ).length;
 
   return (
     <div className="mx-auto max-w-7xl">
@@ -44,8 +52,8 @@ export default function DashboardPage() {
           </span>
           <h2>Welcome, Dr. {firstName}</h2>
           <p>
-          Review lung CT classifications and keep each result organized by
-          patient.
+          Review brain MRI and lung CT classifications and keep each result
+          organized by patient.
           </p>
         </div>
         <Link to="/analyze" className="primary-btn">
@@ -65,8 +73,13 @@ export default function DashboardPage() {
           <small>Across saved cases</small>
         </div>
         <div className="surface stat-card">
+          <span>Brain MRI cases</span>
+          <strong>{brainMriCount}</strong>
+          <small>Saved classifications</small>
+        </div>
+        <div className="surface stat-card">
           <span>Lung CT cases</span>
-          <strong>{analyses.length}</strong>
+          <strong>{lungCtCount}</strong>
           <small>Saved classifications</small>
         </div>
       </section>

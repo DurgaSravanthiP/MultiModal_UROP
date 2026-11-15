@@ -8,16 +8,16 @@ export default function AuthLayout({ title, subtitle, children }) {
           to="/"
           className="flex items-center gap-2 font-semibold text-white"
         >
-          <span className="brand-mark">LS</span>LungScope AI
+          <span className="brand-mark">MS</span>MediScan AI
         </Link>
         <div>
           <span className="eyebrow" style={{ color: "#9de3dd" }}>
-            Lung CT classification system
+            Multimodal imaging workspace
           </span>
           <h1>Clarity for every scan review.</h1>
           <p>
-            A focused workspace for doctors to classify lung CT images, review
-            model output, and keep a clear history of cases.
+            A focused workspace for reviewing brain MRI and lung CT model
+            output while keeping results organized by patient.
           </p>
         </div>
         <p className="!text-xs !text-[#b7dedd]">

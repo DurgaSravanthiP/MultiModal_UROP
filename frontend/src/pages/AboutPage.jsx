@@ -1,5 +1,11 @@
 const capabilities = [
   {
+    title: "Brain MRI",
+    category: "Four-class brain tumor image classification",
+    description:
+      "A trained image-classification model returns glioma, meningioma, no tumor, or pituitary with a confidence score.",
+  },
+  {
     title: "Lung CT",
     category: "Five-class lung cancer classification",
     description:
@@ -11,12 +17,12 @@ export default function AboutPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-8">
       <header className="max-w-3xl">
-        <p className="eyebrow">LungScope AI</p>
+        <p className="eyebrow">MediScan AI</p>
         <h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
           Medical imaging review workspace
         </h2>
         <p className="mt-4 text-base leading-7 text-slate-600">
-          LungScope AI focuses on classifying lung CT images with a
+          MediScan AI supports brain MRI and lung CT image classification in a
           patient-organized workflow. Clinicians can submit a scan, review
           model output, and return to saved results from history.
         </p>
@@ -31,7 +37,7 @@ export default function AboutPage() {
             Supported analysis
           </h3>
           <p className="mt-1 text-sm text-slate-600">
-            The model is trained on the five classes in the lung cancer dataset.
+            Each modality uses its own model and dataset class labels.
           </p>
         </div>
         <div className="grid gap-4">
@@ -57,7 +63,7 @@ export default function AboutPage() {
           Designed for consistent review
         </h3>
         <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-          Each result is stored with its patient ID, lung CT disease focus,
+          Each result is stored with its patient ID, scan type and disease focus,
           model classification, confidence score, and submission date.
         </p>
       </section>

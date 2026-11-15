@@ -7,8 +7,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PYTHON_DIR = path.resolve(__dirname, "../../python_files");
 
-export function runPythonPrediction(filePath, originalName = "") {
-  const scriptPath = path.join(PYTHON_DIR, "lung_ct_predict.py");
+export function runPythonPrediction(filePath, originalName = "", scanType = "lung_ct") {
+  const scriptsByScanType = {
+    lung_ct: "lung_ct_predict.py",
+    brain_mri: "brain_mri_predict.py",
+  };
+  const scriptName = scriptsByScanType[scanType];
+  if (!scriptName) {
+    return Promise.reject(new Error(`Unsupported scan type: ${scanType}`));
+  }
+  const scriptPath = path.join(PYTHON_DIR, scriptName);
 
   return new Promise((resolve, reject) => {
     if (!fs.existsSync(scriptPath)) {
@@ -41,26 +49,33 @@ export function runPythonPrediction(filePath, originalName = "") {
     });
 
     child.on("close", (code) => {
-      if (code !== 0) {
-        return reject(new Error(stderr.trim() || "Python prediction failed."));
-      }
-
+      let parsed;
       try {
-        const parsed = JSON.parse(stdout.trim());
-        if (parsed.success === false) {
-          return reject(new Error(parsed.message || "Prediction failed."));
-        }
-        if (!parsed.prediction || parsed.confidence === undefined) {
-          return reject(new Error("Prediction output was incomplete."));
-        }
-        resolve(parsed);
+        parsed = JSON.parse(stdout.trim());
       } catch (error) {
+        if (code !== 0) {
+          return reject(
+            new Error(stderr.trim() || "Python prediction failed."),
+          );
+        }
         reject(
           new Error(
             `Invalid JSON returned by Python model: ${stdout.trim() || error.message}`,
           ),
         );
+        return;
       }
+
+      if (parsed.success === false) {
+        return reject(new Error(parsed.message || "Prediction failed."));
+      }
+      if (code !== 0) {
+        return reject(new Error(stderr.trim() || "Python prediction failed."));
+      }
+      if (!parsed.prediction || parsed.confidence === undefined) {
+        return reject(new Error("Prediction output was incomplete."));
+      }
+      resolve(parsed);
     });
   });
 }

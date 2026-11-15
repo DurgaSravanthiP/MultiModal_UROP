@@ -4,12 +4,14 @@ import { getStoredAuth } from "../services/authService";
 import { getClinicalGuidance } from "../utils/clinicalGuidance";
 
 function formatScanName(scanType) {
+  if (scanType === "brain_mri") return "Brain MRI";
   if (scanType === "lung_ct") return "Lung CT";
   return "Unknown scan";
 }
 
 function formatDiseaseFocus(row) {
   if (row.diseaseType) return row.diseaseType;
+  if (row.scanType === "brain_mri") return "Four-class brain tumor MRI classification";
   if (row.scanType === "lung_ct") return "Five-class lung cancer classification";
   return "Not recorded";
 }
@@ -35,7 +37,9 @@ export default function HistoryPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const guidance = selectedScan ? getClinicalGuidance(selectedScan.prediction) : null;
+  const guidance = selectedScan
+    ? getClinicalGuidance(selectedScan.prediction, selectedScan.scanType)
+    : null;
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -122,7 +126,7 @@ export default function HistoryPage() {
                         {row.imageAvailable ? (
                           <img
                             src={`/api/analysis/${row.id}/image?token=${authToken}`}
-                            alt="CT scan"
+                            alt={`${formatScanName(row.scanType)} scan`}
                             className="h-full w-full object-cover"
                             onError={(e) => {
                               e.target.onerror = null;
@@ -196,7 +200,7 @@ export default function HistoryPage() {
               <div className="w-36 h-36 rounded-xl overflow-hidden bg-black border-2 border-slate-800 shadow-md shrink-0 flex items-center justify-center">
                 <img
                   src={`/api/analysis/${selectedScan.id}/image?token=${authToken}`}
-                  alt="CT scan"
+                  alt={`${formatScanName(selectedScan.scanType)} scan`}
                   className="w-full h-full object-cover"
                   onError={(e) => {
                     e.target.onerror = null;

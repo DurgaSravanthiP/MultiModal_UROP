@@ -16,6 +16,7 @@ datasets/
 # Trained model artifacts
 *.keras
 lung_ct_class_names.json
+brain_mri_class_names.json
 
 # Environment variables and secrets
 .env

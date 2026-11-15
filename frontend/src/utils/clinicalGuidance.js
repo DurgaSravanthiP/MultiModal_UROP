@@ -205,7 +205,39 @@ export const CLINICAL_GUIDELINES = {
   },
 };
 
-export function getClinicalGuidance(prediction) {
+export function getClinicalGuidance(prediction, scanType = "lung_ct") {
+  if (scanType === "brain_mri") {
+    return {
+      name: prediction || "Brain MRI classification",
+      category: "Brain MRI image classification",
+      riskLevel: "Clinician Review Recommended",
+      severity: "warning",
+      color: {
+        badge: "bg-slate-50 text-slate-700 border-slate-200",
+        accent: "#64748b",
+        border: "border-slate-400",
+      },
+      summary:
+        "This image-based model result is a research aid, not a complete MRI interpretation. It should be reviewed alongside the full study and relevant clinical information by a qualified healthcare professional.",
+      precautions: [
+        {
+          title: "Review the complete MRI study",
+          description:
+            "Ask a qualified radiologist or treating clinician to interpret the full imaging study and confirm the model output.",
+        },
+        {
+          title: "Consider clinical context",
+          description:
+            "Interpret this result together with the patient's symptoms, history, and other relevant findings.",
+        },
+      ],
+      nextSteps: [
+        "Discuss the result with a qualified healthcare professional.",
+        "Do not use the model output alone to make treatment decisions.",
+      ],
+    };
+  }
+
   if (!prediction) {
     return CLINICAL_GUIDELINES["normal cases"];
   }
@@ -217,7 +249,7 @@ export function getClinicalGuidance(prediction) {
   }
   return {
     name: prediction,
-    category: "Pulmonary CT Classification",
+    category: "Medical Image Classification",
     riskLevel: "Clinical Review Required",
     severity: "warning",
     color: {
@@ -226,12 +258,12 @@ export function getClinicalGuidance(prediction) {
       border: "border-slate-400",
     },
     summary:
-      "The scan has been processed by the deep learning classifier. Please correlate the findings with patient clinical history and diagnostic laboratory studies.",
+      "The image has been processed by a classification model. Correlate the result with the full imaging study, patient history, and other relevant findings.",
     precautions: [
       {
         title: "Qualified Radiologist Review",
         description:
-          "Submit all volumetric CT slices to a licensed radiologist for comprehensive diagnostic reporting.",
+          "Ask a qualified radiologist to review the full imaging study.",
       },
       {
         title: "Symptom Correlation",
@@ -240,7 +272,7 @@ export function getClinicalGuidance(prediction) {
       },
     ],
     nextSteps: [
-      "Consult your healthcare provider or pulmonary specialist for formal interpretation.",
+      "Consult a qualified healthcare provider for formal interpretation.",
     ],
   };
 }

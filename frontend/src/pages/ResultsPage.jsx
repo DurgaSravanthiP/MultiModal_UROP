@@ -22,7 +22,11 @@ export default function ResultsPage() {
   }
 
   const scanLabel =
-    result.scanType === "lung_ct" ? "Lung CT" : "Unknown scan";
+    result.scanType === "brain_mri"
+      ? "Brain MRI"
+      : result.scanType === "lung_ct"
+        ? "Lung CT"
+        : "Unknown scan";
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">

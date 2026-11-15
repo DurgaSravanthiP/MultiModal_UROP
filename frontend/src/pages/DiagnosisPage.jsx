@@ -3,16 +3,36 @@ import { Link } from "react-router-dom";
 import { analyzeScan } from "../services/diagnosisService";
 import { getClinicalGuidance } from "../utils/clinicalGuidance";
 
-const scanType = "lung_ct";
-const diseaseClasses = [
-  { name: "Adenocarcinoma", tag: "Malignant NSCLC", color: "text-rose-700 bg-rose-50 border-rose-200" },
-  { name: "Benign cases", tag: "Non-Malignant", color: "text-amber-700 bg-amber-50 border-amber-200" },
-  { name: "Large cell carcinoma", tag: "Aggressive NSCLC", color: "text-purple-700 bg-purple-50 border-purple-200" },
-  { name: "Normal cases", tag: "Healthy Lung", color: "text-emerald-700 bg-emerald-50 border-emerald-200" },
-  { name: "Squamous cell carcinoma", tag: "Airway Carcinoma", color: "text-orange-700 bg-orange-50 border-orange-200" },
+const BRAIN_MRI_LOW_CONFIDENCE_THRESHOLD = 70;
+
+const scanOptions = [
+  {
+    id: "brain_mri",
+    label: "Brain MRI",
+    description: "Four-class brain tumor image classification",
+    classes: [
+      { name: "Glioma", tag: "Brain MRI class", color: "text-rose-700 bg-rose-50 border-rose-200" },
+      { name: "Meningioma", tag: "Brain MRI class", color: "text-purple-700 bg-purple-50 border-purple-200" },
+      { name: "No tumor", tag: "Brain MRI class", color: "text-emerald-700 bg-emerald-50 border-emerald-200" },
+      { name: "Pituitary", tag: "Brain MRI class", color: "text-amber-700 bg-amber-50 border-amber-200" },
+    ],
+  },
+  {
+    id: "lung_ct",
+    label: "Lung CT",
+    description: "Five-class lung cancer image classification",
+    classes: [
+      { name: "Adenocarcinoma", tag: "Malignant NSCLC", color: "text-rose-700 bg-rose-50 border-rose-200" },
+      { name: "Benign cases", tag: "Non-Malignant", color: "text-amber-700 bg-amber-50 border-amber-200" },
+      { name: "Large cell carcinoma", tag: "Aggressive NSCLC", color: "text-purple-700 bg-purple-50 border-purple-200" },
+      { name: "Normal cases", tag: "Healthy Lung", color: "text-emerald-700 bg-emerald-50 border-emerald-200" },
+      { name: "Squamous cell carcinoma", tag: "Airway Carcinoma", color: "text-orange-700 bg-orange-50 border-orange-200" },
+    ],
+  },
 ];
 
 export default function DiagnosisPage() {
+  const [scanType, setScanType] = useState("lung_ct");
   const [patientId, setPatientId] = useState("");
   const [image, setImage] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
@@ -70,7 +90,10 @@ export default function DiagnosisPage() {
     setPatientId("");
   };
 
-  const guidance = analysis ? getClinicalGuidance(analysis.prediction) : null;
+  const selectedScan = scanOptions.find((scan) => scan.id === scanType);
+  const guidance = analysis
+    ? getClinicalGuidance(analysis.prediction, scanType)
+    : null;
 
   return (
     <div className="analysis-page max-w-5xl mx-auto space-y-8">
@@ -84,8 +107,8 @@ export default function DiagnosisPage() {
           </span>
           <div>
             <p className="eyebrow text-xs uppercase tracking-wider font-bold text-teal-600">Imaging Workspace</p>
-            <h2 className="text-2xl font-bold text-slate-900">AI Lung CT Scan Analysis</h2>
-            <p className="text-sm text-slate-500">Submit one lung CT image for five-class AI-assisted review</p>
+            <h2 className="text-2xl font-bold text-slate-900">AI Imaging Analysis</h2>
+            <p className="text-sm text-slate-500">Review a brain MRI or lung CT image in one patient-linked workspace</p>
           </div>
         </div>
         {analysis && (
@@ -139,17 +162,54 @@ export default function DiagnosisPage() {
           </label>
         </section>
 
-        {/* Step 2: 5 Classes in Colors */}
         <section className="analysis-section space-y-3">
           <div className="analysis-section-title flex items-center gap-2">
             <span className="w-6 h-6 rounded-full bg-teal-600 text-white text-xs font-bold flex items-center justify-center">2</span>
             <div>
+              <h3 className="font-semibold text-slate-800">Choose scan type</h3>
+              <p className="text-xs text-slate-500">Select the modality that matches the image you are uploading.</p>
+            </div>
+          </div>
+          <div className="analysis-scan-options">
+            {scanOptions.map((option) => (
+              <label
+                key={option.id}
+                className={`analysis-scan-option ${scanType === option.id ? "selected" : ""}`}
+              >
+                <input
+                  type="radio"
+                  name="scanType"
+                  value={option.id}
+                  checked={scanType === option.id}
+                  onChange={() => {
+                    setScanType(option.id);
+                    setImage(null);
+                    setAnalysis(null);
+                    setError("");
+                  }}
+                />
+                <span className="analysis-scan-badge">{option.id === "brain_mri" ? "MRI" : "CT"}</span>
+                <span className="analysis-scan-copy">
+                  <strong>{option.label}</strong>
+                  <small>{option.description}</small>
+                </span>
+                <span className="analysis-radio-indicator" aria-hidden="true" />
+              </label>
+            ))}
+          </div>
+        </section>
+
+        {/* Classification classes for the selected modality */}
+        <section className="analysis-section space-y-3">
+          <div className="analysis-section-title flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-teal-600 text-white text-xs font-bold flex items-center justify-center">3</span>
+            <div>
               <h3 className="font-semibold text-slate-800">Classification Classes</h3>
-              <p className="text-xs text-slate-500">The model checks the uploaded CT against these five classes:</p>
+              <p className="text-xs text-slate-500">The selected model returns one of these {selectedScan.classes.length} classes:</p>
             </div>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-            {diseaseClasses.map((item) => (
+            {selectedScan.classes.map((item) => (
               <div
                 key={item.name}
                 className={`rounded-xl border p-3 text-xs font-medium flex flex-col justify-between shadow-2xs ${item.color}`}
@@ -161,13 +221,13 @@ export default function DiagnosisPage() {
           </div>
         </section>
 
-        {/* Step 3: Scan Upload & Big Preview */}
+        {/* Step 4: Scan Upload & Preview */}
         <section className="analysis-section space-y-3">
           <div className="analysis-section-title flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-teal-600 text-white text-xs font-bold flex items-center justify-center">3</span>
+            <span className="w-6 h-6 rounded-full bg-teal-600 text-white text-xs font-bold flex items-center justify-center">4</span>
             <div>
               <h3 className="font-semibold text-slate-800">Upload Scan Image</h3>
-              <p className="text-xs text-slate-500">Choose a lung CT image. JPG, PNG or WEBP, up to 5 MB.</p>
+              <p className="text-xs text-slate-500">Choose a {selectedScan.label} image. JPG, PNG or WEBP, up to 5 MB.</p>
             </div>
           </div>
 
@@ -207,7 +267,7 @@ export default function DiagnosisPage() {
               <div className="relative group rounded-xl overflow-hidden bg-black w-44 h-44 shrink-0 border-2 border-slate-700 shadow-md flex items-center justify-center">
                 <img
                   src={previewUrl}
-                  alt="Selected Lung CT Scan Preview"
+                  alt={`Selected ${selectedScan.label} preview`}
                   className="w-full h-full object-cover"
                 />
                 <button
@@ -317,7 +377,7 @@ export default function DiagnosisPage() {
                   className="w-full h-full object-cover transition group-hover:scale-105 duration-300"
                 />
                 <div className="absolute top-2 left-2 bg-black/75 backdrop-blur-xs text-white px-2 py-0.5 rounded text-[10px] font-mono">
-                  Axial CT View
+                  Axial {scanType === "brain_mri" ? "MRI" : "CT"} View
                 </div>
                 <div className="absolute bottom-2 right-2 bg-black/75 backdrop-blur-xs text-white px-2 py-0.5 rounded text-[10px] font-mono">
                   ID: {analysis.patientId}
@@ -339,7 +399,11 @@ export default function DiagnosisPage() {
                   <span className="text-xs font-bold text-slate-600">{guidance.category}</span>
                 </div>
                 <h4 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
-                  {analysis.prediction}
+                  {scanType === "brain_mri" &&
+                  Number(analysis.confidence) <
+                    BRAIN_MRI_LOW_CONFIDENCE_THRESHOLD
+                    ? `Uncertain — ${analysis.prediction}`
+                    : analysis.prediction}
                 </h4>
 
                 {/* Animated Confidence Bar Meter */}
@@ -358,6 +422,18 @@ export default function DiagnosisPage() {
                     />
                   </div>
                 </div>
+                {scanType === "brain_mri" &&
+                  Number(analysis.confidence) <
+                    BRAIN_MRI_LOW_CONFIDENCE_THRESHOLD && (
+                    <p
+                      role="alert"
+                      className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900"
+                    >
+                      Low-confidence result: this predicted class may be
+                      incorrect. Have a qualified radiologist review the full
+                      MRI.
+                    </p>
+                  )}
               </div>
 
               {/* Neat Pathology Summary */}
@@ -417,8 +493,8 @@ export default function DiagnosisPage() {
           </div>
 
           <p className="analysis-result-note text-xs text-slate-500 pt-2 border-t border-slate-100">
-            Five-class lung cancer classification. Review this AI-generated
-            result with appropriate clinical information. Model confidence is not a medical diagnosis.
+            {selectedScan.label} image classification for clinician review.
+            Model confidence is not a medical diagnosis.
           </p>
 
           <div className="flex justify-between items-center pt-2">
@@ -462,7 +538,7 @@ export default function DiagnosisPage() {
             />
             <div className="p-3 text-white text-xs flex justify-between items-center">
               <span>Patient ID: <b>{analysis?.patientId || patientId}</b></span>
-              <span>Modality: <b>Thoracic CT (Axial)</b></span>
+              <span>Modality: <b>{scanType === "brain_mri" ? "Brain MRI" : "Lung CT"}</b></span>
             </div>
           </div>
         </div>

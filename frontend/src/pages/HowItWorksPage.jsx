@@ -6,16 +6,21 @@ const workflow = [
   },
   {
     number: "02",
-    title: "Add imaging",
-    detail: "Upload one lung CT image to analyze it with the five-class lung cancer model.",
+    title: "Choose a scan type",
+    detail: "Select Brain MRI or Lung CT so the image is sent to the matching classification model.",
   },
   {
     number: "03",
-    title: "Review classifications",
-    detail: "View the model classification and confidence for each scan in the current review.",
+    title: "Add imaging",
+    detail: "Upload one JPG, PNG, or WEBP image for the selected scan type.",
   },
   {
     number: "04",
+    title: "Review classifications",
+    detail: "View the model classification and confidence, then review the result with a qualified healthcare professional.",
+  },
+  {
+    number: "05",
     title: "Return to the record",
     detail: "Find saved results in analysis history by patient ID, scan type, and date.",
   },
@@ -30,7 +35,7 @@ export default function HowItWorksPage() {
           A clear path from scan upload to saved result
         </h2>
         <p className="mt-3 leading-7 text-slate-600">
-          Patient-linked analysis keeps lung CT review organized in one
+          Patient-linked analysis keeps brain MRI and lung CT review organized in one
           workspace.
         </p>
       </header>
@@ -56,7 +61,7 @@ export default function HowItWorksPage() {
 
       <section className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-6">
         <h3 className="text-base font-semibold text-slate-900">
-          Supported lung CT classes
+          Supported classes
         </h3>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {[
@@ -71,6 +76,21 @@ export default function HowItWorksPage() {
             </div>
           ))}
         </div>
+      </section>
+      <section className="mt-6 grid gap-4 sm:grid-cols-2">
+        <article className="rounded-2xl border border-slate-200 bg-white p-6">
+          <h3 className="font-semibold text-slate-900">Brain MRI</h3>
+          <p className="mt-2 text-sm text-slate-600">
+            Glioma, meningioma, no tumor, and pituitary.
+          </p>
+        </article>
+        <article className="rounded-2xl border border-slate-200 bg-white p-6">
+          <h3 className="font-semibold text-slate-900">Lung CT</h3>
+          <p className="mt-2 text-sm text-slate-600">
+            Adenocarcinoma, benign cases, large cell carcinoma, normal cases,
+            and squamous cell carcinoma.
+          </p>
+        </article>
       </section>
     </div>
   );

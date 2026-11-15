@@ -93,7 +93,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     success: true,
     status: "ok",
-    service: "LungScope AI API",
+    service: "MediScan AI API",
     mongodb:
       mongoose.connection.readyState === 1 ? "connected" : "disconnected",
   });
@@ -267,24 +267,35 @@ async function handleAnalyze(req, res) {
     });
   }
   if (files.image?.[0]) {
+    const scanType = req.body?.scanType || "lung_ct";
     uploads.push({
       file: files.image[0],
-      scanType: req.body?.scanType || "lung_ct",
-      diseaseType: "Five-class lung cancer classification",
+      scanType,
+      diseaseType:
+        scanType === "brain_mri"
+          ? "Four-class brain tumor MRI classification"
+          : "Five-class lung cancer classification",
     });
   }
 
   try {
-    if (uploads.some(({ scanType }) => scanType !== "lung_ct")) {
+    const supportedScanTypes = new Set(["lung_ct", "brain_mri"]);
+    if (uploads.some(({ scanType }) => !supportedScanTypes.has(scanType))) {
       return res
         .status(400)
-        .json({ success: false, message: "Only lung CT scans are supported." });
+        .json({
+          success: false,
+          message: "Choose a supported scan type: lung CT or brain MRI.",
+        });
     }
 
     if (uploads.length !== 1) {
       return res
         .status(400)
-        .json({ success: false, message: "Please upload one lung CT image." });
+        .json({
+          success: false,
+          message: "Please upload one image for a single scan type.",
+        });
     }
 
     if (!patientId) {
@@ -298,7 +309,11 @@ async function handleAnalyze(req, res) {
         file,
         scanType,
         diseaseType,
-        prediction: await runPythonPrediction(file.path, file.originalname),
+        prediction: await runPythonPrediction(
+          file.path,
+          file.originalname,
+          scanType,
+        ),
       })),
     );
     const failedPrediction = predictionResults.find(

@@ -14,7 +14,7 @@ const analysisSchema = new mongoose.Schema(
     },
     scanType: {
       type: String,
-      enum: ["lung_ct"],
+      enum: ["lung_ct", "brain_mri"],
       required: true,
     },
     diseaseType: { type: String, required: true },

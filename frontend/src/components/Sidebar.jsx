@@ -26,10 +26,10 @@ export default function Sidebar() {
   return (
     <aside className="app-sidebar">
       <div className="sidebar-brand">
-        <span className="brand-mark">LS</span>
+        <span className="brand-mark">MS</span>
         <div>
-          <p className="text-lg font-semibold text-slate-800">LungScope AI</p>
-          <p className="text-xs text-slate-500">Lung CT research support</p>
+          <p className="text-lg font-semibold text-slate-800">MediScan AI</p>
+          <p className="text-xs text-slate-500">Brain MRI &amp; lung CT workspace</p>
         </div>
       </div>
       <nav className="sidebar-nav">
