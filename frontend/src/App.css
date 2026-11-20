@@ -73,6 +73,32 @@
 .muted {
   color: #728494;
 }
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  .analysis-result,
+  .analysis-result *,
+  .clinician-report,
+  .clinician-report * {
+    visibility: visible !important;
+  }
+  .analysis-result,
+  .clinician-report {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+  .analysis-result button,
+  .analysis-result a,
+  .clinician-report button {
+    display: none !important;
+  }
+}
 .field-label {
   display: block;
   margin-bottom: 7px;

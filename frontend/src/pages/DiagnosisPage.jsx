@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import ClinicalAssessmentSummary from "../components/ClinicalAssessmentSummary";
+import ShapExplanation from "../components/ShapExplanation";
 import { analyzeScan } from "../services/diagnosisService";
 import { getClinicalGuidance } from "../utils/clinicalGuidance";
 
@@ -22,11 +24,11 @@ const scanOptions = [
     label: "Lung CT",
     description: "Five-class lung cancer image classification",
     classes: [
-      { name: "Adenocarcinoma", tag: "Malignant NSCLC", color: "text-rose-700 bg-rose-50 border-rose-200" },
-      { name: "Benign cases", tag: "Non-Malignant", color: "text-amber-700 bg-amber-50 border-amber-200" },
-      { name: "Large cell carcinoma", tag: "Aggressive NSCLC", color: "text-purple-700 bg-purple-50 border-purple-200" },
-      { name: "Normal cases", tag: "Healthy Lung", color: "text-emerald-700 bg-emerald-50 border-emerald-200" },
-      { name: "Squamous cell carcinoma", tag: "Airway Carcinoma", color: "text-orange-700 bg-orange-50 border-orange-200" },
+      { name: "Adenocarcinoma", tag: "Lung CT class", color: "text-rose-700 bg-rose-50 border-rose-200" },
+      { name: "Benign cases", tag: "Lung CT class", color: "text-amber-700 bg-amber-50 border-amber-200" },
+      { name: "Large cell carcinoma", tag: "Lung CT class", color: "text-purple-700 bg-purple-50 border-purple-200" },
+      { name: "Normal cases", tag: "Lung CT class", color: "text-emerald-700 bg-emerald-50 border-emerald-200" },
+      { name: "Squamous cell carcinoma", tag: "Lung CT class", color: "text-orange-700 bg-orange-50 border-orange-200" },
     ],
   },
 ];
@@ -347,6 +349,12 @@ export default function DiagnosisPage() {
               <div>
                 <p className="eyebrow text-xs uppercase tracking-wider font-bold text-teal-600">Analysis complete</p>
                 <h3 className="text-xl font-bold text-slate-900">Result for patient {analysis.patientId || patientId.trim()}</h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  {selectedScan.label} ·{" "}
+                  {analysis.createdAt
+                    ? new Date(analysis.createdAt).toLocaleString()
+                    : "Analysis time unavailable"}
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2 self-end sm:self-auto">
@@ -373,7 +381,7 @@ export default function DiagnosisPage() {
               >
                 <img
                   src={previewUrl}
-                  alt={`CT Scan for patient ${analysis.patientId}`}
+                  alt={`${selectedScan.label} image for patient ${analysis.patientId}`}
                   className="w-full h-full object-cover transition group-hover:scale-105 duration-300"
                 />
                 <div className="absolute top-2 left-2 bg-black/75 backdrop-blur-xs text-white px-2 py-0.5 rounded text-[10px] font-mono">
@@ -409,7 +417,7 @@ export default function DiagnosisPage() {
                 {/* Animated Confidence Bar Meter */}
                 <div className="space-y-1.5 pt-2">
                   <div className="flex justify-between text-xs font-bold">
-                    <span className="text-slate-600">Model Confidence</span>
+                    <span className="text-slate-600">Model score (not calibrated probability)</span>
                     <span className="text-teal-700">{Number(analysis.confidence).toFixed(2)}%</span>
                   </div>
                   <div className="w-full h-3 rounded-full bg-slate-200 overflow-hidden">
@@ -429,16 +437,16 @@ export default function DiagnosisPage() {
                       role="alert"
                       className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900"
                     >
-                      Low-confidence result: this predicted class may be
-                      incorrect. Have a qualified radiologist review the full
-                      MRI.
+                      Low model score: the predicted class may be unreliable.
+                      Interpret it within the complete MRI study; this display
+                      threshold has not been clinically validated.
                     </p>
                   )}
               </div>
 
-              {/* Neat Pathology Summary */}
+              {/* Model scope */}
               <div className="p-4 rounded-xl border border-slate-200 bg-white">
-                <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">Pathological Context</h5>
+                <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">Model interpretation limits</h5>
                 <p className="text-xs text-slate-600 leading-relaxed">
                   {guidance.summary}
                 </p>
@@ -446,17 +454,29 @@ export default function DiagnosisPage() {
             </div>
           </div>
 
-          {/* Neat Description of Precautions and Clinical Actions */}
+          <ShapExplanation
+            explanation={analysis.explanation}
+            imageUrl={previewUrl}
+          />
+
+          <ClinicalAssessmentSummary
+            prediction={analysis.prediction}
+            nextStep={guidance.nextSteps[0]}
+          />
+
+          {/* Clinician precautions and recommendations */}
           <div className="pt-4 border-t border-slate-100 space-y-4">
             <div className="flex items-center gap-2">
               <span className="text-lg">🛡️</span>
               <div>
-                <h4 className="text-base font-bold text-slate-900">Recommended Precautions &amp; Clinical Next Steps</h4>
-                <p className="text-xs text-slate-500">Evidence-based clinical protocol corresponding to {analysis.prediction}</p>
+                <h4 className="text-base font-bold text-slate-900">Precautions and Recommendations</h4>
+                <p className="text-xs text-slate-500">General clinician review guidance based on the limits of this image-classification model.</p>
               </div>
             </div>
 
-            {/* 4 Neat Precaution Cards */}
+            <h5 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+              Precautions
+            </h5>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               {guidance.precautions.map((item, idx) => (
                 <div
@@ -476,10 +496,10 @@ export default function DiagnosisPage() {
               ))}
             </div>
 
-            {/* Next Steps Checklist */}
+            {/* Recommended clinician actions */}
             <div className="rounded-xl border border-teal-200 bg-teal-50/50 p-4">
               <h5 className="text-xs font-bold text-teal-900 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                <span>📋</span> Immediate Clinical Action Checklist
+                <span>📋</span> Recommended Clinician Actions
               </h5>
               <ul className="space-y-1.5">
                 {guidance.nextSteps.map((step, idx) => (
@@ -492,9 +512,23 @@ export default function DiagnosisPage() {
             </div>
           </div>
 
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">
+              How this summary was generated
+            </h5>
+            <p className="text-xs leading-relaxed text-slate-600">
+              The model supplies the predicted class and score. This report
+              combines those outputs with the patient identifier, modality, and
+              analysis time. The checklist is fixed application text, not
+              generated by the model; no patient history or clinical findings
+              are used to create it.
+            </p>
+          </div>
+
           <p className="analysis-result-note text-xs text-slate-500 pt-2 border-t border-slate-100">
-            {selectedScan.label} image classification for clinician review.
-            Model confidence is not a medical diagnosis.
+            Research prototype output for clinician review. The model score is
+            not calibrated clinical certainty and this summary is not a
+            radiology report.
           </p>
 
           <div className="flex justify-between items-center pt-2">

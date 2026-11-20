@@ -1,11 +1,14 @@
 import json
-import os
 import sys
+import warnings
 from pathlib import Path
 
 import joblib
 import numpy as np
 from PIL import Image
+from sklearn.exceptions import InconsistentVersionWarning
+
+from shap_explanations import explain_lung_features
 
 PYTHON_DIR = Path(__file__).resolve().parent
 MODEL_PATH = PYTHON_DIR / "lung_cancer_classifier.joblib"
@@ -20,9 +23,7 @@ DEFAULT_CLASSES = [
 ]
 
 
-def extract_features(img_path):
-    img = Image.open(img_path).convert("L").resize((128, 128))
-    arr = np.asarray(img, dtype=np.float32) / 255.0
+def extract_features_from_array(arr):
 
     hist, _ = np.histogram(arr, bins=32, range=(0, 1), density=True)
     c = arr[32:96, 32:96]
@@ -60,40 +61,83 @@ def extract_features(img_path):
     return np.concatenate([hist, c_hist, stats, radial])
 
 
-def predict(image_path: str, original_filename: str = ""):
-    if not os.path.isfile(image_path):
-        raise FileNotFoundError(f"Image file not found: {image_path}")
+def extract_features(img_path):
+    img = Image.open(img_path).convert("L").resize((128, 128))
+    arr = np.asarray(img, dtype=np.float32) / 255.0
+    return extract_features_from_array(arr)
+
+
+def feature_names():
+    return (
+        [f"Global intensity histogram bin {index}" for index in range(32)]
+        + [f"Central intensity histogram bin {index}" for index in range(16)]
+        + [
+            "Global mean intensity",
+            "Global intensity variation",
+            "Global intensity 10th percentile",
+            "Global intensity 25th percentile",
+            "Global median intensity",
+            "Global intensity 75th percentile",
+            "Global intensity 90th percentile",
+            "Central mean intensity",
+            "Central intensity variation",
+            "Central intensity 10th percentile",
+            "Central intensity 25th percentile",
+            "Central median intensity",
+            "Central intensity 75th percentile",
+            "Central intensity 90th percentile",
+        ]
+        + [f"Radial ring {index} mean intensity" for index in range(1, 9)]
+    )
+
+
+def predict(image_path: str):
+    image_file = Path(image_path)
+    if not image_file.is_file():
+        raise FileNotFoundError(f"Image file not found: {image_file}")
+    if not MODEL_PATH.is_file():
+        raise FileNotFoundError(
+            f"Lung CT model not found: {MODEL_PATH}. "
+            "Run train_classifier.py before analyzing scans."
+        )
 
     class_names = DEFAULT_CLASSES
     if CLASS_NAMES_PATH.is_file():
-        try:
-            class_names = json.loads(CLASS_NAMES_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        class_names = json.loads(CLASS_NAMES_PATH.read_text(encoding="utf-8"))
+    if class_names != DEFAULT_CLASSES:
+        raise ValueError("Lung CT class names do not match the model class order.")
 
-    feats = extract_features(image_path).reshape(1, -1)
-
-    if MODEL_PATH.is_file():
-        model = joblib.load(MODEL_PATH)
-        probs = model.predict_proba(feats)[0]
-        class_idx = int(np.argmax(probs))
-        confidence = float(probs[class_idx]) * 100
-        pred_label = class_names[class_idx]
-    else:
-        pred_label = class_names[0]
-        confidence = 85.0
-
-    # Check both original_filename and the image_path itself for ground-truth hints
-    search_text = f"{original_filename} {image_path}".lower()
-    for idx, c in enumerate(class_names):
-        if c.lower() in search_text:
-            pred_label = c
-            confidence = max(confidence, 96.50)
-            break
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", InconsistentVersionWarning)
+            model = joblib.load(MODEL_PATH)
+    except InconsistentVersionWarning as exc:
+        raise RuntimeError(
+            "Lung CT model was saved with a different scikit-learn version. "
+            "Install the matching version or retrain the model."
+        ) from exc
+    expected_classes = np.arange(len(class_names))
+    if not np.array_equal(model.classes_, expected_classes):
+        raise ValueError("Lung CT model classes do not match the class-name mapping.")
+    features = extract_features(image_file).reshape(1, -1)
+    probabilities = model.predict_proba(features)[0]
+    if len(probabilities) != len(class_names):
+        raise ValueError("Lung CT model output does not match the class names.")
+    class_index = int(np.argmax(probabilities))
+    reference_image = np.full((128, 128), 0.5, dtype=np.float32)
+    explanation = explain_lung_features(
+        model,
+        features,
+        feature_names(),
+        class_index,
+        class_names[class_index],
+        extract_features_from_array(reference_image),
+    )
 
     return {
-        "prediction": pred_label,
-        "confidence": round(float(confidence), 2),
+        "prediction": class_names[class_index],
+        "confidence": round(float(probabilities[class_index]) * 100, 2),
+        "explanation": explanation,
     }
 
 
@@ -102,11 +146,8 @@ if __name__ == "__main__":
         print(json.dumps({"success": False, "message": "Please provide an image path."}))
         sys.exit(1)
 
-    image_path = sys.argv[1]
-    original_name = sys.argv[2] if len(sys.argv) > 2 else ""
-
     try:
-        print(json.dumps(predict(image_path, original_name)))
+        print(json.dumps(predict(sys.argv[1])))
     except Exception as exc:
         print(json.dumps({"success": False, "message": str(exc)}))
         sys.exit(1)

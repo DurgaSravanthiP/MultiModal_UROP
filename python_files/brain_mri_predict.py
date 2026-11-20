@@ -2,6 +2,8 @@ import json
 import sys
 from pathlib import Path
 
+from shap_explanations import explain_brain_image
+
 PYTHON_DIR = Path(__file__).resolve().parent
 MODEL_PATH = PYTHON_DIR / "brain_tumor_classifier.keras"
 CLASS_NAMES_PATH = PYTHON_DIR / "brain_mri_class_names.json"
@@ -34,7 +36,8 @@ def predict(image_path):
         target_size=IMAGE_SIZE,
     )
     image_array = tf.keras.utils.img_to_array(image)
-    probabilities = tf.keras.models.load_model(MODEL_PATH).predict(
+    model = tf.keras.models.load_model(MODEL_PATH)
+    probabilities = model.predict(
         np.expand_dims(image_array, axis=0),
         verbose=0,
     )[0]
@@ -42,9 +45,16 @@ def predict(image_path):
         raise ValueError("Brain MRI model output does not match the class names.")
 
     class_index = int(np.argmax(probabilities))
+    explanation = explain_brain_image(
+        model,
+        image_array,
+        class_index,
+        class_names[class_index],
+    )
     return {
         "prediction": class_names[class_index],
         "confidence": round(float(probabilities[class_index]) * 100, 2),
+        "explanation": explanation,
     }
 
 

@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PYTHON_DIR = path.resolve(__dirname, "../../python_files");
 
-export function runPythonPrediction(filePath, originalName = "", scanType = "lung_ct") {
+export function runPythonPrediction(filePath, scanType = "lung_ct") {
   const scriptsByScanType = {
     lung_ct: "lung_ct_predict.py",
     brain_mri: "brain_mri_predict.py",
@@ -24,9 +24,6 @@ export function runPythonPrediction(filePath, originalName = "", scanType = "lun
     }
 
     const args = [scriptPath, filePath];
-    if (originalName) {
-      args.push(originalName);
-    }
 
     const child = spawn("python", args, {
       cwd: PYTHON_DIR,

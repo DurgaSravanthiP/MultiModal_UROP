@@ -2,11 +2,11 @@
 
 **Project:** MediScan AI (also referred to in package names and earlier notebook text as LungScope AI)
 
-**Report prepared:** 15 November 2026
+**Report prepared:** 20 November 2026
 
 **Project type:** Educational and research prototype for medical-image classification
 
-**Scope:** Brain MRI and lung CT image classification, patient-linked result management, and fixed informational guidance
+**Scope:** Brain MRI and lung CT image classification, patient-linked result management, and a fixed clinician-review checklist
 
 > **Important:** This report describes the code and data currently present in the repository. It is not evidence of clinical validity. The application is an educational/research prototype, not a medical device or diagnostic service. A qualified healthcare professional must interpret the complete imaging study and clinical context.
 
@@ -16,7 +16,7 @@ MediScan AI is a web application and machine-learning prototype for classifying 
 
 The datasets currently present locally contain 7,200 brain MRI images and 1,535 lung CT images. The brain pipeline preserves the dataset's provided Testing partition and splits Training into training and validation subsets. The newer lung pipeline uses seeded, class-wise 70/15/15 train/validation/test partitions. Both EfficientNet pipelines resize images to 224 × 224 pixels, use online image augmentation, and train a softmax classification head. The brain model has an additional fine-tuning stage.
 
-A significant reproducibility and integration issue is present: the backend invokes `lung_ct_predict.py`, which loads a scikit-learn/joblib model and handcrafted 70-element features, whereas the newer lung training script creates an EfficientNet `.keras` model. The live CT predictor does not load that EfficientNet artifact; it also contains fallback and filename-based label logic. Therefore the existence of a trained EfficientNet model file does not establish that the web application uses it, and current CT outputs cannot be treated as validated model predictions. No evaluation logs or verified performance metrics are available in the repository. These limitations, along with the small and imbalanced lung dataset, the use of single exported images rather than full DICOM studies, and unvalidated clinical guidance, must be addressed before research or clinical claims are made.
+A significant reproducibility and integration issue is present: the backend invokes `lung_ct_predict.py`, which loads a scikit-learn/joblib model and handcrafted 70-element features, whereas the newer lung training script creates an EfficientNet `.keras` model. The live CT predictor does not load that EfficientNet artifact. The current CT predictor now fails if its expected model is missing and does not derive predictions from filenames, but its joblib output is still not the EfficientNet output. No evaluation logs or verified performance metrics are available in the repository. These limitations, along with the small and imbalanced lung dataset, the use of single exported images rather than full DICOM studies, and the lack of clinical validation, must be addressed before research or clinical claims are made.
 
 **Keywords:** medical image classification, brain MRI, lung CT, EfficientNetB0, transfer learning, histogram-based gradient boosting, web application, decision support
 
@@ -39,7 +39,7 @@ These are image-level classifications. The repository does not implement full ra
 - Train separate image classifiers for each modality.
 - Return one predicted class and a model-produced confidence/probability value.
 - Associate each saved analysis with an account, patient identifier, modality, and timestamp.
-- Display additional educational guidance associated with the predicted label.
+- Display the model output with a fixed, general clinician-review checklist.
 - Clearly position the output as a research aid rather than a medical diagnosis.
 
 ### 1.3 Intended users and intended use
@@ -64,7 +64,7 @@ At inference time, the intended flow is:
 4. The backend checks the scan type, stores the temporary upload, and starts the Python script associated with that scan type.
 5. The Python process returns a class label and confidence value as JSON.
 6. On success, the backend retains the uploaded image, stores a MongoDB analysis record, and returns it to the frontend.
-7. The frontend displays the result and obtains static guidance for the predicted class.
+7. The frontend displays the result with a fixed clinician-review checklist.
 
 The upload limit in the backend is 5 MB. The UI accepts common raster image formats; this is not a DICOM ingestion or full-volume processing workflow.
 
@@ -189,7 +189,7 @@ This is a classical machine-learning approach with manually designed image featu
 
 The backend routes `brain_mri` requests to `brain_mri_predict.py`. That script verifies the input file and model exist, loads the saved class-name mapping when available, resizes and converts the input image to RGB at 224 × 224, then invokes the saved Keras model. It chooses the class with the largest output value and returns its label and score as a percentage. The model is loaded for each prediction request in this script.
 
-The frontend additionally marks a brain MRI result below 70% as "Uncertain" and displays a low-confidence warning recommending radiologist review. This threshold is a user-interface rule; the code does not show that it was selected through clinical validation or probability calibration.
+The frontend additionally marks a brain MRI result below 70% as "Uncertain" and displays a low-score warning. This threshold is a user-interface rule; the code does not show that it was selected through clinical validation or probability calibration.
 
 ### 5.2 Lung CT inference and pipeline mismatch
 
@@ -203,29 +203,54 @@ This creates an important mismatch:
 
 Accordingly, the presence of the EfficientNet artifact alone does not mean the web application is using that model. The local repository also contains both a `.keras` and a `.joblib` lung artifact, further underscoring the need to select one pipeline and align training, inference, and documentation.
 
-There are additional reliability concerns in the current `lung_ct_predict.py` implementation:
-
-- If the `.joblib` file is absent, the script assigns the first class label and a fixed 85% confidence rather than failing with a missing-model error.
-- It searches the supplied original filename and image path for class-name strings. If it finds one, it overwrites the predicted label and raises the reported confidence to at least 96.50%. This means a filename containing a class label can affect the output independently of the model's image evidence.
-- It silently ignores errors while loading the optional class-name JSON file.
-
-These behaviors make the CT response unreliable as a model-only prediction and can produce success-shaped outputs without a valid model result. They should be removed or explicitly treated as a non-production development fallback before any evaluation is reported. The report does not regard current CT results as a trustworthy measure of the EfficientNet model.
+The current `lung_ct_predict.py` requires the `.joblib` model and fails if it is
+missing. It no longer derives a class from the image filename or returns a
+fixed-confidence fallback. It also checks that the model's class indexes match
+the class-name mapping before returning its predicted class and score. This
+does not resolve the larger training/inference mismatch: the backend still
+uses the handcrafted-feature `.joblib` model rather than the EfficientNet
+`.keras` model. An initial local smoke test found the artifact was saved with
+scikit-learn 1.9.0 while the runtime had 1.8.0. The dependency is now pinned to
+1.9.0 and the model-load/prediction smoke test passes in that environment. The
+predictor rejects future version mismatches rather than returning an
+unverified result. Current CT output must not be attributed to EfficientNet.
 
 ## 6. Precautions and Clinical Guidance
 
-### 6.1 How guidance is produced
+### 6.1 How the clinician-facing summary is generated
 
-Precautions are not generated by the CNN or by an additional clinical AI model. The frontend calls a JavaScript lookup function that maps the predicted class and scan type to fixed text stored in `frontend/src/utils/clinicalGuidance.js`.
+The summary is assembled by the frontend after the backend receives a JSON
+prediction from the modality-specific Python script. It contains:
 
-- **Lung CT:** labels such as normal, benign, adenocarcinoma, large cell carcinoma, and squamous cell carcinoma map to predefined summaries, risk labels, precautions, and suggested next steps.
-- **Brain MRI:** all predicted classes receive generic guidance to have the complete MRI reviewed by a qualified professional and to consider clinical context. The app does not provide class-specific brain-tumor precautions in this lookup.
-- **Unknown labels:** a generic clinical-review message is returned.
+1. **Analysis metadata:** patient identifier, scan modality, saved image, and
+   analysis timestamp from the submitted and stored record.
+2. **Model output:** one predicted class and the model's top score. For brain
+   MRI this comes from the saved Keras model's softmax output; for lung CT the
+   current backend loads the handcrafted-feature scikit-learn model and uses
+   `predict_proba()`. The displayed score is not established as calibrated
+   clinical probability.
+3. **Clinician review checklist:** fixed text in
+   `frontend/src/utils/clinicalGuidance.js`. It prompts verification of the
+   case/image, review of the complete study, clinical correlation, and
+   documentation of an independent interpretation.
+4. **Print output:** the browser's print function formats the visible result
+   summary for printing. It does not generate a radiology narrative or create
+   additional model findings.
 
-This mapping is deterministic and independent of image details other than the predicted class. It does not consider the confidence score, symptoms, patient history, age, prior scans, or other findings. The code contains detailed clinical-sounding statements and specific timeframes; however, the repository does not provide citations or a guideline-validation process for those text entries. The interface's use of the phrase “evidence-based” is therefore not substantiated by documented sources in the project.
+The checklist is not produced by the classifier or a generative AI model. It
+does not use the image details, patient history, symptoms, demographics, or
+prior studies. The image model returns only a class and score; it does not
+localize a finding or analyze the complete MRI/CT study.
 
-### 6.2 Safety interpretation
+### 6.2 Clinician-facing wording and limitations
 
-The precautions must be presented only as unvalidated educational text, not personalized medical recommendations. Some entries describe tests, referral timing, or interventions that require clinical judgment. They should be reviewed by qualified clinicians and supported with authoritative, current references before being used in a research publication or shown as actionable guidance. The application's own disclaimer states that the output is not a substitute for professional diagnosis, advice, or treatment.
+The application presents the result as a research-model classification and
+uses a clinician-oriented review checklist. It does not tell a clinician to
+consult another provider or website, and it does not prescribe tests,
+treatment, referral timing, or patient-specific management. The checklist is
+workflow support only; it is not a validated clinical protocol. The
+classification must not be presented as a confirmed diagnosis or a
+radiologist's report.
 
 ## 7. Software Architecture and Project Structure
 
@@ -258,7 +283,7 @@ Multimodal/
 │       ├── pages/                      # Home, diagnosis, results, history, etc.
 │       ├── services/                   # API clients for auth and diagnosis
 │       └── utils/
-│           └── clinicalGuidance.js      # Static class-to-guidance mapping
+│           └── clinicalGuidance.js      # Fixed clinician-review checklist
 └── python_files/
     ├── requirements.txt
     ├── datasets/                       # Local source image datasets
@@ -349,12 +374,12 @@ For a reproducible experiment, record at minimum:
 1. **Not clinically validated:** no prospective study, clinician adjudication, regulatory approval, or clinical safety evaluation is documented.
 2. **No verified performance report:** the repository does not contain test results that can substantiate accuracy claims.
 3. **CT training/inference mismatch:** the web backend calls the handcrafted-feature/joblib predictor rather than the newer EfficientNet CT model.
-4. **Unsafe CT fallback and filename override:** the current CT predictor can return a fixed default result when its model is missing and can change outputs based on filename text.
+4. **CT training/inference mismatch:** the backend uses the handcrafted-feature joblib model, not the EfficientNet CT model; missing models now fail explicitly, and filenames no longer affect predictions.
 5. **Small and imbalanced lung dataset:** only 1,535 images are present, with class counts from 120 to 631. Image-level random splits may not represent independent patients.
 6. **Single-image input:** one resized raster image is not equivalent to reviewing a full CT or MRI study. There is no DICOM series handling, 3D context, or study-level aggregation in the described workflow.
 7. **Possible dataset leakage or source bias:** patient-level independence, duplicate images, acquisition sites, and demographic representation are not verified in the code.
 8. **Confidence interpretation:** a softmax score or `predict_proba()` value should not be assumed calibrated or interpreted as clinical certainty.
-9. **Guidance is static and uncited:** frontend text is keyed to the class label, does not use patient-specific context, and lacks linked evidence in the repository.
+9. **Checklist is not a clinical protocol:** the frontend checklist is fixed text, not patient-specific, and has not been clinically validated as a workflow.
 10. **Data governance:** patient identifiers and scan images are sensitive. A local demo architecture and per-user authorization are not a substitute for a documented threat model, secure deployment, consent, retention, and audit controls.
 
 ## 11. Recommended Next Steps
@@ -371,15 +396,13 @@ For a reproducible experiment, record at minimum:
 
 - Choose one CT classifier as the intended model.
 - Make the training artifact, class ordering, preprocessing, and backend predictor consistent.
-- Remove the fixed-confidence fallback and filename-derived prediction override.
 - Fail explicitly when model files or dependencies are missing.
-- Add integration tests proving the backend loads the chosen model and that filenames do not influence prediction.
+- Add integration tests proving the backend loads the chosen model and that input filenames do not influence prediction.
 
-### Before showing clinical guidance
+### Before showing the clinician review checklist in a clinical setting
 
-- Have the guidance reviewed by qualified clinicians.
-- Cite current authoritative sources for every recommendation and remove unsupported or overly prescriptive claims.
-- Clearly distinguish general educational information from patient-specific care.
+- Validate the intended workflow, checklist wording, and printed-summary design with representative clinicians.
+- Clearly distinguish the research-model classification from a verified radiology interpretation.
 - Ensure that low-confidence or out-of-distribution inputs are handled safely; currently the explicit low-confidence UI rule is limited to brain MRI.
 
 ### Before any real-world deployment
@@ -392,9 +415,9 @@ For a reproducible experiment, record at minimum:
 
 ## 12. Conclusion
 
-MediScan AI combines two image-classification experiments with a web workflow for patient-linked analysis history and class-specific informational text. The newer model-development path uses ImageNet-initialized EfficientNetB0 for four-class brain MRI and five-class lung CT classification, with class-weighted training and held-out evaluation in code. The repository also retains a separate handcrafted-feature gradient-boosting lung model.
+MediScan AI combines two image-classification experiments with a web workflow for patient-linked analysis history and a fixed clinician-review checklist. The newer model-development path uses ImageNet-initialized EfficientNetB0 for four-class brain MRI and five-class lung CT classification, with class-weighted training and held-out evaluation in code. The repository also retains a separate handcrafted-feature gradient-boosting lung model.
 
-The project is suitable for continued educational and methodological development, but its current evidence does not support diagnostic or clinical performance claims. The most urgent technical issue for interpreting results is the mismatch between the EfficientNet lung CT training artifact and the older model used by the backend. Reproducible evaluation, patient-level data validation, safe inference behavior, documented dataset provenance, and clinician-reviewed guidance are necessary next steps.
+The project is suitable for continued educational and methodological development, but its current evidence does not support diagnostic or clinical performance claims. The most urgent technical issue for interpreting results is the mismatch between the EfficientNet lung CT training artifact and the older model used by the backend. Reproducible evaluation, patient-level data validation, documented dataset provenance, and clinician validation of the intended workflow are necessary next steps.
 
 ## References and evidence
 

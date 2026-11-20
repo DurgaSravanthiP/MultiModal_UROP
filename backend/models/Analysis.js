@@ -20,6 +20,7 @@ const analysisSchema = new mongoose.Schema(
     diseaseType: { type: String, required: true },
     prediction: { type: String, required: true },
     confidence: { type: Number, required: true },
+    explanation: { type: mongoose.Schema.Types.Mixed, default: null },
     imageName: { type: String, default: "" },
     createdAt: { type: Date, default: Date.now },
   },

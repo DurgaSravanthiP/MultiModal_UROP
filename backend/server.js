@@ -84,6 +84,7 @@ function toAnalysisRecord(record) {
     diseaseType: record.diseaseType || "",
     prediction: record.prediction,
     confidence: Number(record.confidence),
+    explanation: record.explanation || null,
     imageAvailable: Boolean(record.imageName),
     createdAt: record.createdAt,
   };
@@ -311,7 +312,6 @@ async function handleAnalyze(req, res) {
         diseaseType,
         prediction: await runPythonPrediction(
           file.path,
-          file.originalname,
           scanType,
         ),
       })),
@@ -339,6 +339,7 @@ async function handleAnalyze(req, res) {
         diseaseType,
         prediction: prediction.prediction,
         confidence: Number(prediction.confidence),
+        explanation: prediction.explanation,
         imageName,
       })),
     );

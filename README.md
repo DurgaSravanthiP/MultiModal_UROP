@@ -34,6 +34,7 @@ python_files/
   prepare_lung_ct_dataset.py
   train_lung_ct_model.py
   lung_ct_predict.py
+  shap_explanations.py
 ```
 
 The brain MRI preparation script keeps the dataset's official `Testing` images
@@ -42,9 +43,25 @@ from `Training`. The lung CT pipeline creates reproducible class-stratified
 70/15/15 train/validation/test splits. Both are stored in their own
 `python_files/processed_data/` subfolders.
 
-Each modality has its own EfficientNetB0 classifier and class-name file. Models
-are trained and evaluated independently; a brain MRI is never sent to the lung
-model or vice versa.
+The brain MRI training and inference path uses an EfficientNetB0 classifier.
+The current backend lung CT inference path instead loads the older
+handcrafted-feature scikit-learn model (`lung_cancer_classifier.joblib`)
+produced by `train_classifier.py`. The newer lung EfficientNet training script
+is not connected to backend inference. The selected model, preprocessing, and
+class mapping must match before interpreting either output. Lung prediction
+also stops if the saved model was created with a different scikit-learn
+version; use a compatible environment or retrain the model before analysis.
+The current local CT artifact was saved with scikit-learn 1.9.0; this version
+is pinned in `python_files/requirements.txt` for reproducible setup.
+
+The result summary combines the model's predicted class and score with the
+patient identifier, scan type, and analysis timestamp. Its clinician-review
+checklist is fixed application text, not model-generated advice. The model
+does not interpret the complete study or use patient history. Brain MRI results
+include a SHAP GradientExplainer heatmap; lung CT results include the top
+SHAP-ranked handcrafted image features. Both explanations use a uniform
+intensity reference and describe model attribution only, not lesion locations,
+clinical findings, or calibrated certainty.
 
 ## Prepare datasets and train models
 
@@ -111,9 +128,13 @@ backend on port 5100.
 2. Open **Analyze Scan** and enter a patient ID.
 3. Select **Brain MRI** or **Lung CT**.
 4. Upload one JPG, PNG, or WEBP image (up to 5 MB).
-5. Review the predicted class and confidence with a qualified healthcare
-   professional.
+5. Review the predicted class and model score alongside the complete original
+   imaging study and relevant clinical information.
 6. Open **History** to review saved results and timestamps.
+
+Printed summaries are generated from the saved analysis metadata and
+classification. They are research-prototype summaries, not radiology reports
+or confirmed diagnoses.
 
 Train the model for a modality before running an analysis for that modality.
 

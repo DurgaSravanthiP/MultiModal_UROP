@@ -1,3 +1,6 @@
 tensorflow
 numpy
 pillow
+scikit-learn==1.9.0
+joblib
+shap>=0.48,<0.51
