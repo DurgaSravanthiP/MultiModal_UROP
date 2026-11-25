@@ -46,6 +46,9 @@ export function getClinicalGuidance(prediction, scanType = "lung_ct") {
       : scanType === "lung_ct"
         ? "complete CT study, including relevant series and slices"
         : "complete imaging study";
+  const resultSpecificReview = isNegativeLikeClass
+    ? `Do not use the "${predictedClass}" image-model class to rule out disease; correlate it with independent clinical assessment.`
+    : `Treat "${predictedClass}" as an unconfirmed image-model class, not a confirmed diagnosis or disease subtype.`;
 
   return {
     name: predictedClass,
@@ -60,6 +63,7 @@ export function getClinicalGuidance(prediction, scanType = "lung_ct") {
     summary: `The model assigned the class "${predictedClass}" to one uploaded ${modality} image. It does not produce a complete study interpretation, identify or localize findings, or use patient-specific clinical information.`,
     precautions,
     nextSteps: [
+      resultSpecificReview,
       "Verify the patient identifier, scan type, and image quality before interpreting the result.",
       `Have a qualified clinician independently review the ${completeStudyLabel}.`,
       "Compare with prior imaging and correlate with available history, symptoms, and other clinical findings.",

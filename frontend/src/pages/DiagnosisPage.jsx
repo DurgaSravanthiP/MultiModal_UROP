@@ -457,6 +457,13 @@ export default function DiagnosisPage() {
           <ShapExplanation
             explanation={analysis.explanation}
             imageUrl={previewUrl}
+            reportDetails={{
+              patientId: analysis.patientId || patientId.trim(),
+              scanType: selectedScan.label,
+              prediction: analysis.prediction,
+              confidence: analysis.confidence,
+              createdAt: analysis.createdAt,
+            }}
           />
 
           <ClinicalAssessmentSummary

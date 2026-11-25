@@ -224,6 +224,13 @@ export default function HistoryPage() {
             <ShapExplanation
               explanation={selectedScan.explanation}
               imageUrl={`/api/analysis/${selectedScan.id}/image?token=${authToken}`}
+              reportDetails={{
+                patientId: selectedScan.patientId,
+                scanType: formatScanName(selectedScan.scanType),
+                prediction: selectedScan.prediction,
+                confidence: selectedScan.confidence,
+                createdAt: selectedScan.createdAt,
+              }}
             />
 
             <ClinicalAssessmentSummary

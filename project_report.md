@@ -1,104 +1,122 @@
-# MediScan AI: Project Technical Report and Research Paper Draft
+# MediScan AI
 
-**Project:** MediScan AI (also referred to in package names and earlier notebook text as LungScope AI)
+## Project Report
 
-**Report prepared:** 20 November 2026
+**Submitted by:** [Student name(s) and ID(s)]
 
-**Project type:** Educational and research prototype for medical-image classification
+**Project guide:** [Guide name]
 
-**Scope:** Brain MRI and lung CT image classification, patient-linked result management, and a fixed clinician-review checklist
+**Department:** Computer Science and Engineering
 
-> **Important:** This report describes the code and data currently present in the repository. It is not evidence of clinical validity. The application is an educational/research prototype, not a medical device or diagnostic service. A qualified healthcare professional must interpret the complete imaging study and clinical context.
+**Institution:** SRM University-AP
+**Project type:** Educational and research prototype
+
+> **Scope note:** This report describes the implementation in this repository. MediScan AI is not a medical device. Its predictions and explanations are not diagnoses or clinical findings.
 
 ## Abstract
 
-MediScan AI is a web application and machine-learning prototype for classifying individual brain MRI and lung CT images. Its user interface supports authenticated users, selection of an imaging modality, upload of one image, display of a predicted class and model confidence, and storage of patient-linked analysis history. The repository includes two image-classification training pipelines based on EfficientNetB0 transfer learning: a four-class brain MRI model and a five-class lung CT model. It also contains a separate, older lung CT pipeline based on hand-engineered image statistics and a histogram-based gradient boosting classifier.
+MediScan AI is a web application for classifying one uploaded brain MRI or lung CT image at a time. A signed-in user selects the scan type, enters a patient identifier, and uploads an image. The application returns a predicted class and a model score, saves the result and image for later review, and displays a SHAP explanation. The user can view previous analyses and print a result summary.
 
-The datasets currently present locally contain 7,200 brain MRI images and 1,535 lung CT images. The brain pipeline preserves the dataset's provided Testing partition and splits Training into training and validation subsets. The newer lung pipeline uses seeded, class-wise 70/15/15 train/validation/test partitions. Both EfficientNet pipelines resize images to 224 × 224 pixels, use online image augmentation, and train a softmax classification head. The brain model has an additional fine-tuning stage.
+The project contains separate classifiers for the two image types; it does not combine MRI and CT data in one model. The brain MRI predictor uses an EfficientNetB0 model. The current lung CT predictor uses a scikit-learn HistGradientBoosting classifier trained on 70 hand-designed image features. A separate script trains an EfficientNetB0 lung classifier, but the backend does not currently use that model. This difference is important when describing or evaluating the application.
 
-A significant reproducibility and integration issue is present: the backend invokes `lung_ct_predict.py`, which loads a scikit-learn/joblib model and handcrafted 70-element features, whereas the newer lung training script creates an EfficientNet `.keras` model. The live CT predictor does not load that EfficientNet artifact. The current CT predictor now fails if its expected model is missing and does not derive predictions from filenames, but its joblib output is still not the EfficientNet output. No evaluation logs or verified performance metrics are available in the repository. These limitations, along with the small and imbalanced lung dataset, the use of single exported images rather than full DICOM studies, and the lack of clinical validation, must be addressed before research or clinical claims are made.
+The local datasets contain 7,200 brain MRI images and 1,535 lung CT images. Training scripts prepare data splits and evaluate models, but the repository does not contain verified training logs or test metrics. No accuracy claim is made in this report. The output is an image-level research classification and must not be used by itself for patient care.
 
-**Keywords:** medical image classification, brain MRI, lung CT, EfficientNetB0, transfer learning, histogram-based gradient boosting, web application, decision support
+## Chapter 1. Introduction
 
-## 1. Introduction
+### 1.1 Project overview
 
-### 1.1 Background and motivation
+Medical image classifiers can be difficult to inspect from a user’s perspective: a model may return a label without showing what influenced that result. This project explores a small end-to-end workflow that joins image classification, a result history, and a model-attribution display.
 
-Medical imaging is a major source of information for the assessment of diseases. This project explores whether image-classification software can provide a convenient, educational demonstration of machine-learning predictions from brain MRI and lung CT images. It combines model code with a user-facing web application so that an image can be submitted, classified, and associated with a patient identifier for later review.
+The application supports two independent tasks:
 
-The system has two separate image-classification tasks:
+| Scan type | Classes returned by the model |
+|---|---|
+| Brain MRI | glioma, meningioma, notumor, pituitary |
+| Lung CT | adenocarcinoma, Benign cases, large cell carcinoma, Normal cases, squamous cell carcinoma |
 
-1. **Brain MRI classification:** select one of four image-folder labels.
-2. **Lung CT classification:** select one of five image-folder labels.
-
-These are image-level classifications. The repository does not implement full radiology interpretation, segmentation, lesion localization, tumor staging, or a clinical decision rule that combines the image with symptoms, history, laboratory results, or the rest of an imaging study.
+These are the folder labels used by the datasets and model code. They should not be read as confirmed diagnoses. The system processes a single raster image; it does not read a complete MRI or CT study, combine multiple slices, segment a tumour, or use a patient's history.
 
 ### 1.2 Project objectives
 
-- Provide a web interface for selecting Brain MRI or Lung CT and uploading one image.
-- Train separate image classifiers for each modality.
-- Return one predicted class and a model-produced confidence/probability value.
-- Associate each saved analysis with an account, patient identifier, modality, and timestamp.
-- Display the model output with a fixed, general clinician-review checklist.
-- Clearly position the output as a research aid rather than a medical diagnosis.
+- Build a web interface for selecting a scan type and submitting an image.
+- Train and run image classifiers for brain MRI and lung CT.
+- Return the highest-scoring class with the corresponding model score.
+- Keep each result linked to a signed-in account, patient identifier, and timestamp.
+- Show an explanation of the model output and a fixed clinician-review checklist.
+- Make the limits of the prototype visible in its result presentation.
 
-### 1.3 Intended users and intended use
+### 1.3 What “multimodal” means in this project
 
-The repository documents an educational and research use case. It does not establish intended use in patient care, prospective clinical evaluation, or use by a particular class of medical professional. A predicted label must not be used by itself to diagnose, rule out, stage, or treat a disease.
+The application accepts two imaging modalities, MRI and CT. They are handled by separate models and separate prediction scripts. There is no feature fusion, shared multimodal network, or joint reasoning across MRI and CT. In this report, “multimodal” therefore refers to the application’s support for two scan types, not to a model that learns from both together.
 
-## 2. System Overview
+## Chapter 2. Motivation
 
-### 2.1 Main components
+The project was built to connect model training with a usable image-analysis workflow. Instead of running a prediction only from a notebook or command line, a user can submit an image through a browser and find the saved output later. The SHAP display was added to show which input image regions or engineered features contributed to the selected class score.
 
-The application has three main software layers:
+The work is a software and machine-learning prototype. It does not establish that the models are accurate enough for clinical use. That would require documented data provenance, patient-level evaluation, external testing, clinical review, and a safety process that are not present in the repository.
 
-1. **Frontend:** React application that handles account screens, scan-type selection, file upload and preview, prediction display, guidance, and history views.
-2. **Backend:** Express API that authenticates requests, validates uploads, invokes a Python script, and stores analysis records in MongoDB.
-3. **Python model layer:** separate scripts for preparing datasets, training models, and running image predictions.
+## Chapter 3. Technical Background
 
-At inference time, the intended flow is:
+### 3.1 EfficientNetB0 and transfer learning
 
-1. The user signs in and enters a patient ID.
-2. The user selects Brain MRI or Lung CT and uploads one JPG, PNG, or WEBP file.
-3. The frontend submits the image and metadata to the authenticated API.
-4. The backend checks the scan type, stores the temporary upload, and starts the Python script associated with that scan type.
-5. The Python process returns a class label and confidence value as JSON.
-6. On success, the backend retains the uploaded image, stores a MongoDB analysis record, and returns it to the frontend.
-7. The frontend displays the result with a fixed clinician-review checklist.
+EfficientNetB0 is a convolutional neural network architecture. This project starts from weights trained on ImageNet and replaces the original classification head with a small head for the project’s labels. This is transfer learning: the pretrained network supplies image features, and the project trains a classifier for the new classes.
 
-The upload limit in the backend is 5 MB. The UI accepts common raster image formats; this is not a DICOM ingestion or full-volume processing workflow.
+The classification head uses global average pooling, dropout, and a softmax output. Softmax produces one score per class. The code selects the largest score as the prediction and displays it as a percentage. The value is not calibrated to represent the probability that a patient has a disease.
 
-### 2.2 User accounts and result storage
+### 3.2 Handcrafted image features and gradient boosting
 
-The backend uses MongoDB/Mongoose models for users and analyses. Passwords are stored as bcrypt hashes. Authentication uses signed JWT bearer tokens with a seven-day expiry. An analysis record includes the account's user ID, a required patient ID, scan type, disease-type description, prediction, confidence, retained image name, and timestamps. Analysis-history and image retrieval endpoints check that the record belongs to the authenticated user.
+The live lung CT pipeline converts an image into numerical intensity features and passes them to a `HistGradientBoostingClassifier`. This scikit-learn model is an ensemble of decision trees built in stages. Unlike EfficientNet, this pipeline does not learn spatial image features directly from pixels; its input is the fixed 70-value feature vector described in Chapter 5.
 
-The uploaded image is initially written under a temporary upload directory. After prediction succeeds, it is moved to the history-image directory. Temporary files are cleaned up after the request, and retained files are removed if the analysis is not successfully saved. These mechanisms do not by themselves establish a regulatory privacy or security standard. Patient identifiers and imaging data should only be used with appropriate authorization, consent, access controls, retention policies, and deployment safeguards.
+### 3.3 SHAP
 
-## 3. Data
+SHAP (SHapley Additive exPlanations) assigns contribution values to input features for a particular model output, relative to a reference input. The contribution may increase or decrease the score for the selected class. It explains model behavior for the supplied input and reference; it does not establish causation or clinical meaning.
 
-### 3.1 Dataset organization and observed image counts
+This project uses different SHAP explainers for its two live predictors:
 
-The local data folders are organized by modality and class. The repository does not record enough provenance to identify the original dataset publisher, collection sites, patient-level identifiers, inclusion/exclusion criteria, or licensing terms. Those details must be established from the original dataset source before publication.
+- `GradientExplainer` for the differentiable brain MRI neural network.
+- `KernelExplainer` for the lung CT classifier’s `predict_proba` output.
 
-#### Brain MRI
+The exact inputs, reference values, approximations, and display logic are described in Chapter 5. The choice of reference affects the interpretation of the contributions.
 
-The brain dataset has `Training` and `Testing` folders, each with four class folders:
+## Chapter 4. System Design and Methodology
 
-| Class folder | Training images | Testing images |
+### 4.1 Application components
+
+The application has three main parts:
+
+1. **React frontend:** account screens, scan upload, result display, SHAP display, history, profile, and print summary.
+2. **Express backend:** authentication, upload validation, calls to the selected Python predictor, and analysis-history API.
+3. **Python model code:** dataset preparation, model training, prediction, and SHAP calculations.
+
+MongoDB stores user and analysis records. Uploaded images that are successfully analyzed are retained under the backend’s history-image directory.
+
+### 4.2 Analysis flow
+
+1. The user signs in and opens the analysis page.
+2. The user selects Brain MRI or Lung CT, supplies a patient ID, and chooses one JPG, PNG, or WEBP image.
+3. The frontend sends the image and scan type to an authenticated Express endpoint.
+4. The backend checks that exactly one supported scan type and one image were supplied, then starts the matching Python prediction script.
+5. Python preprocesses the image, obtains a prediction and class score, and calculates the SHAP explanation.
+6. If prediction succeeds, the backend retains the image and saves the result, explanation, scan type, patient ID, and account ID in MongoDB.
+7. The frontend displays the image, predicted class, model score, explanation, review checklist, and print option. The saved item can also be opened from history.
+
+The upload limit is 5 MB. This workflow accepts individual image files; it is not a DICOM upload or full-study viewer.
+
+### 4.3 Dataset and preparation
+
+The local image folders use their directory names as class labels. The preparation scripts accept JPG, JPEG, PNG, and WEBP files and use a fixed random seed of 42.
+
+**Brain MRI:** The local dataset has 5,600 images in `Training` and 1,600 in `Testing`. Each of the four classes has 1,400 training images and 400 testing images. The preparation script separates 15% of each class in `Training` for validation, keeps the provided `Testing` images as the test set, and copies files into processed split folders.
+
+| Split | Images per class | Total |
 |---|---:|---:|
-| glioma | 1,400 | 400 |
-| meningioma | 1,400 | 400 |
-| notumor | 1,400 | 400 |
-| pituitary | 1,400 | 400 |
-| **Total** | **5,600** | **1,600** |
+| Training after split | 1,190 | 4,760 |
+| Validation | 210 | 840 |
+| Test (provided Testing folder) | 400 | 1,600 |
 
-The brain dataset therefore contains **7,200 images** locally. After the preparation script's seeded split, the training partition has 1,190 images per class (4,760 total), the validation partition has 210 per class (840 total), and the held-out Testing partition has 400 per class (1,600 total).
+**Lung CT:** The local dataset has 1,535 images. The preparation script shuffles each class separately and allocates about 70% to training, 15% to validation, and 15% to test.
 
-#### Lung CT
-
-The lung dataset is organized as five class folders and contains **1,535 images**:
-
-| Class folder | Original images | Train | Validation | Test |
+| Class folder | Total images | Train | Validation | Test |
 |---|---:|---:|---:|---:|
 | adenocarcinoma | 337 | 235 | 51 | 51 |
 | Benign cases | 120 | 84 | 18 | 18 |
@@ -107,343 +125,144 @@ The lung dataset is organized as five class folders and contains **1,535 images*
 | squamous cell carcinoma | 260 | 182 | 39 | 39 |
 | **Total** | **1,535** | **1,073** | **231** | **231** |
 
-The lung classes are imbalanced: the normal class has 631 images, while the benign class has 120. The split is performed within each class using a fixed pseudorandom seed, with validation and test each assigned approximately 15% of each class and the remainder assigned to training. Counts reflect the local source folders inspected for this report.
+The lung classes are not evenly represented. Both scripts split image files rather than grouping by patient or study. The code does not establish that images from the same person, duplicate images, or related studies cannot occur in more than one split. The dataset publisher, license, collection details, and patient-level grouping are also not recorded in the repository; these details should be confirmed before a formal publication.
 
-### 3.2 How the data is used
+## Chapter 5. Implementation
 
-The preparation scripts read images from class-labeled directories, validate the expected class-folder names, and copy images into separate processed train, validation, and test directories. The directory name serves as the label when TensorFlow loads the split. The TensorFlow loaders assign integer labels in the explicit class order defined in the scripts.
+### 5.1 Frontend features
 
-- **Training data** updates model weights.
-- **Validation data** is used during fitting for early stopping and learning-rate adjustment. The brain fine-tuning stage also compares validation loss before and after tuning.
-- **Test data** is held out from weight updates and passed to `model.evaluate()` after training.
+The React application uses React Router for page navigation. Its implemented pages include the home page, sign-up and login, dashboard, scan analysis, results, history, profile, About, and How It Works pages. Protected pages require an authenticated session.
 
-The brain preparation script keeps the dataset's provided Testing files as test data and randomly separates a portion of Training for validation. It uses seed 42. The lung preparation script constructs all three splits from the five class directories, also with seed 42; it deletes and recreates its processed split directory each time it runs.
+The analysis page submits one image and scan type. The result page shows the original uploaded image, predicted label, numeric score, SHAP explanation, fixed clinician-review actions, and a print-summary control. The history page provides access to saved analyses. The review checklist is application text; it is not generated by the classifier or by a generative AI model.
 
-Supported image extensions in the preparation scripts are JPG, JPEG, PNG, and WEBP. The TensorFlow pipelines resize images to 224 × 224 and load batches of 32. The older lung feature pipeline instead converts an image to grayscale, resizes it to 128 × 128, and normalizes pixel values to [0, 1].
+### 5.2 Backend and data storage
 
-### 3.3 Data-quality and leakage considerations
+The backend is an Express API. It uses Multer for image uploads, Mongoose to communicate with MongoDB, bcrypt to hash passwords, and JSON Web Tokens (JWTs) for authentication. The token created by the current code expires after seven days.
 
-The code splits files by class and does not show patient-level grouping, study-level grouping, duplicate-image detection, or site-level separation. Consequently, it is not possible to establish from the code that multiple images from one patient or near-duplicate images cannot appear in different partitions. The official brain Testing partition is retained, but its patient independence and provenance are not documented here. The lung split is randomized at the image-file level. A research-grade evaluation should verify patient-level independence and image duplicates before interpreting test results.
+The analysis record includes the account ID, patient ID, scan type, class label, model score, SHAP explanation, saved image name, and creation time. History and saved-image routes check that the requesting account owns the analysis. Temporary uploads are removed after the request; an image is retained for history only after prediction and saving succeed.
 
-## 4. Algorithms and Model Training
+### 5.3 Brain MRI model: training and prediction
 
-### 4.1 EfficientNetB0 transfer-learning pipeline
+The MRI training script resizes images to 224 × 224 pixels and loads batches of 32. It applies random horizontal flips, small rotations, and zooms during training. The model consists of:
 
-The two newer training scripts use **EfficientNetB0**, a convolutional neural network (CNN), initialized with ImageNet weights. The ImageNet-pretrained convolutional layers act as a feature extractor for medical images, while a task-specific classification head is trained on the project's labels.
+1. Image augmentation layers.
+2. ImageNet-initialized EfficientNetB0 without its original top classifier.
+3. Global average pooling.
+4. Dropout with rate 0.3.
+5. A four-unit softmax layer.
 
-The model structure in both scripts is:
+Training uses Adam, sparse categorical cross-entropy, class weights, early stopping, and learning-rate reduction on a validation-loss plateau. Initially, the EfficientNet base is frozen and only the new classification head is trained. A second stage unfreezes the final 40 base-model layers, keeps batch-normalization layers frozen, and uses a lower learning rate. If the fine-tuned model’s validation loss is not lower than the baseline, the script restores the baseline weights. It then evaluates on the held-out test split and saves a Keras model and class-name JSON file.
 
-1. Input image of shape 224 × 224 × 3.
-2. Online augmentation layers:
-   - random horizontal flip;
-   - random rotation with factor 0.05;
-   - random zoom with factor 0.08.
-3. EfficientNetB0 base with `include_top=False` and ImageNet weights.
-4. Global average pooling to turn the spatial feature maps into a feature vector.
-5. Dropout with rate 0.3 to regularize the classification head.
-6. Dense output layer with softmax activation: four units for brain MRI and five for lung CT.
+For prediction, `brain_mri_predict.py` loads the saved model, converts the uploaded image to RGB, resizes it to 224 × 224, and selects the class with the largest model output. The selected score is multiplied by 100 for display. The source code also calculates a SHAP explanation for that predicted class.
 
-The softmax layer produces a score for every class. Inference selects the class with the highest output (`argmax`) and reports that score multiplied by 100 as a percentage. This value is a model output, not a calibrated probability of disease and not a measure of clinical certainty.
+### 5.4 Lung CT model: two pipelines in the repository
 
-The training objective is sparse categorical cross-entropy, appropriate to the integer class labels used by the loader. The optimizer is Adam. The scripts compute inverse-frequency-style class weights from training counts:
+There are two lung CT model paths, and they should not be described as if they were the same model.
 
-`weight(class) = total training images / (number of classes × training images in that class)`
+**Model currently used by the web backend:** `lung_ct_predict.py` converts the image to grayscale, resizes it to 128 × 128, scales pixel values to [0, 1], calculates 70 features, and loads `lung_cancer_classifier.joblib`. The model is a scikit-learn `HistGradientBoostingClassifier`; its `predict_proba()` output is used to select the predicted class and score.
 
-This increases the loss contribution of samples from less frequent training classes. It does not rebalance the test set or prove that performance is fair across classes.
+The 70 features are:
 
-The scripts set TensorFlow's random seed to 42 and prefetch datasets using `tf.data.AUTOTUNE`. Since the scripts initialize EfficientNetB0 with pretrained ImageNet weights, a first training run may require network access to obtain those weights if they are not cached.
+- 32-bin histogram of the whole image.
+- 16-bin histogram of the central 64 × 64 region.
+- 14 statistics: means, standard deviations, and selected percentiles for the whole image and central region.
+- 8 mean-intensity values from concentric radial bands.
 
-### 4.2 Brain MRI training schedule
+**Separate EfficientNet training script:** `train_lung_ct_model.py` trains a five-class EfficientNetB0 image classifier and saves `lung_cancer_classifier.keras`. However, `lung_ct_predict.py` does not load this Keras model. Running the EfficientNet training script alone therefore does not change the model used by the live web prediction route. The current application’s lung output must be attributed to the handcrafted-feature/joblib pipeline unless the backend predictor is changed and verified.
 
-The brain MRI model supports a two-stage schedule:
+### 5.5 What the application returns
 
-1. **Feature-extraction stage:** the EfficientNetB0 base is frozen; only the added classification head is trainable. Maximum 20 epochs, batch size 32, Adam learning rate 0.001.
-2. **Fine-tuning stage:** the final 40 layers of EfficientNetB0 are made trainable, while earlier layers remain frozen. Batch-normalization layers in the selected fine-tuning region are kept non-trainable. The optimizer is recompiled with Adam learning rate 0.00001 and a maximum of 8 fine-tuning epochs.
+The Python predictor returns a JSON object with the predicted class, numeric model score, and explanation. The backend adds database and image metadata and returns the saved analysis to the frontend. The result screen presents:
 
-Both stages use early stopping on validation loss and reduce the learning rate when validation loss plateaus. The initial stage uses patience 5; fine-tuning uses patience 3. If the fine-tuned model's validation loss is not lower than the pre-fine-tuning baseline, the script restores the baseline weights. After this decision, the script evaluates on the held-out test split and saves the `.keras` model and class-name JSON file.
+- The selected modality and predicted class.
+- The model score, formatted as a percentage.
+- The saved input image.
+- A SHAP visualization, when explanation data is available.
+- A fixed clinician-review checklist and a print option.
 
-### 4.3 Newer lung CT training schedule
+For brain MRI, the score comes from the model’s softmax output. For the live lung CT path, it comes from `predict_proba()`. Neither output is shown to be calibrated in the repository. A displayed score such as 90% should be read as the model’s score, not as a 90% chance of disease.
 
-The newer lung CT EfficientNet script trains a frozen EfficientNetB0 feature extractor and a new five-class head for up to 20 epochs, using batch size 32 and Adam learning rate 0.001. It uses class weights, early stopping with patience 5, and learning-rate reduction on a plateau with factor 0.2, patience 2, and minimum learning rate 0.000001. It then evaluates on the test split and saves `lung_cancer_classifier.keras` and `lung_ct_class_names.json`.
+### 5.6 SHAP explanation in this application
 
-Unlike the brain training script, this lung script does not add a separate EfficientNet fine-tuning phase.
+SHAP runs as part of the Python prediction request. Its output is stored with the analysis and rendered on the results page. It explains the selected class output for the current model input relative to a chosen reference. It does not identify a tumour boundary, diagnose a condition, or show where a clinical finding is located.
 
-### 4.4 Older lung CT handcrafted-feature pipeline
+#### Brain MRI: GradientExplainer heatmap
 
-The repository also contains `train_classifier.py`, which implements a different lung classifier:
+1. The predictor passes the resized 224 × 224 RGB image to the model.
+2. The reference is a same-shaped image whose pixel values are all set to the mean intensity of the uploaded image.
+3. SHAP’s `GradientExplainer` estimates attribution values for the predicted class. The code requests 32 samples for the approximation.
+4. The per-channel values are summed to form a signed two-dimensional map.
+5. The map is averaged into a 16 × 16 grid and scaled by its largest absolute value.
+6. The frontend overlays the grid on the uploaded image. Red marks positive contributions to the selected model score; blue marks negative contributions. Opacity is based on contribution magnitude.
 
-1. Convert each image to grayscale, resize to 128 × 128, and scale pixels to [0, 1].
-2. Extract a 70-value feature vector:
-   - 32-bin whole-image intensity histogram;
-   - 16-bin histogram of the central 64 × 64 crop;
-   - 14 intensity statistics (mean, standard deviation, and selected percentiles for the full image and central crop);
-   - 8 mean-intensity values in radial distance bands.
-3. Fit scikit-learn's `HistGradientBoostingClassifier` with `random_state=42`, `max_iter=150`, `learning_rate=0.08`, and `min_samples_leaf=5`.
-4. Save the classifier as `lung_cancer_classifier.joblib`.
+The display is a coarse visualization of the model’s attribution relative to a uniform mean-intensity reference. It is not a segmentation mask or validated localization. Its colors describe the direction of model-score contribution, not whether a region is medically normal or abnormal.
 
-This is a classical machine-learning approach with manually designed image features, not a CNN. The training script can print training accuracy and test accuracy/classification report when run, but no such output is captured as a verified result in the repository.
+#### Lung CT: KernelExplainer feature contributions
 
-## 5. Inference and Prediction Behavior
+1. The predictor extracts the 70 features described in Section 5.4.
+2. It creates a reference feature vector by extracting the same features from a uniform mid-gray image (pixel value 0.5).
+3. SHAP’s model-agnostic `KernelExplainer` calls the classifier’s `predict_proba()` function, using the identity link and 200 samples for its approximation.
+4. The code selects the attribution values for the predicted class and returns the eight features with the largest absolute contributions.
+5. In the frontend, red bars indicate positive contributions and blue bars indicate negative contributions. The displayed value is multiplied by 100 and labelled in percentage points.
 
-### 5.1 Brain MRI inference
+These are contributions of image-intensity statistics and histogram bins. They are not anatomical structures or detected lesions. Because the reference is an artificial uniform image, the explanation is relative to that reference and should not be treated as a comparison with a representative patient population.
 
-The backend routes `brain_mri` requests to `brain_mri_predict.py`. That script verifies the input file and model exist, loads the saved class-name mapping when available, resizes and converts the input image to RGB at 224 × 224, then invokes the saved Keras model. It chooses the class with the largest output value and returns its label and score as a percentage. The model is loaded for each prediction request in this script.
+#### SHAP limitations
 
-The frontend additionally marks a brain MRI result below 70% as "Uncertain" and displays a low-score warning. This threshold is a user-interface rule; the code does not show that it was selected through clinical validation or probability calibration.
+Both explainers approximate feature contributions and depend on the selected reference, model, input preprocessing, and implementation. An attribution answers a narrow question—how the model output changes relative to the reference under the explainer’s assumptions. It does not prove that the model relied on medically meaningful evidence. In this application, SHAP output is an interpretability aid for a research prototype, not a clinical explanation.
 
-### 5.2 Lung CT inference and pipeline mismatch
+## Chapter 6. Hardware and Software Tools
 
-The backend routes `lung_ct` requests to `lung_ct_predict.py`. This script uses the handcrafted-feature pipeline: it extracts the 70 features described above and, if present, loads `lung_cancer_classifier.joblib` to call `predict_proba()`. **It does not load `lung_cancer_classifier.keras`.**
-
-This creates an important mismatch:
-
-- `train_lung_ct_model.py` trains and saves an EfficientNet `.keras` model.
-- `lung_ct_predict.py`, which is the script actually invoked by the backend, loads the older `.joblib` model instead.
-- `train_classifier.py` is the code that produces that `.joblib` artifact.
-
-Accordingly, the presence of the EfficientNet artifact alone does not mean the web application is using that model. The local repository also contains both a `.keras` and a `.joblib` lung artifact, further underscoring the need to select one pipeline and align training, inference, and documentation.
-
-The current `lung_ct_predict.py` requires the `.joblib` model and fails if it is
-missing. It no longer derives a class from the image filename or returns a
-fixed-confidence fallback. It also checks that the model's class indexes match
-the class-name mapping before returning its predicted class and score. This
-does not resolve the larger training/inference mismatch: the backend still
-uses the handcrafted-feature `.joblib` model rather than the EfficientNet
-`.keras` model. An initial local smoke test found the artifact was saved with
-scikit-learn 1.9.0 while the runtime had 1.8.0. The dependency is now pinned to
-1.9.0 and the model-load/prediction smoke test passes in that environment. The
-predictor rejects future version mismatches rather than returning an
-unverified result. Current CT output must not be attributed to EfficientNet.
-
-## 6. Precautions and Clinical Guidance
-
-### 6.1 How the clinician-facing summary is generated
-
-The summary is assembled by the frontend after the backend receives a JSON
-prediction from the modality-specific Python script. It contains:
-
-1. **Analysis metadata:** patient identifier, scan modality, saved image, and
-   analysis timestamp from the submitted and stored record.
-2. **Model output:** one predicted class and the model's top score. For brain
-   MRI this comes from the saved Keras model's softmax output; for lung CT the
-   current backend loads the handcrafted-feature scikit-learn model and uses
-   `predict_proba()`. The displayed score is not established as calibrated
-   clinical probability.
-3. **Clinician review checklist:** fixed text in
-   `frontend/src/utils/clinicalGuidance.js`. It prompts verification of the
-   case/image, review of the complete study, clinical correlation, and
-   documentation of an independent interpretation.
-4. **Print output:** the browser's print function formats the visible result
-   summary for printing. It does not generate a radiology narrative or create
-   additional model findings.
-
-The checklist is not produced by the classifier or a generative AI model. It
-does not use the image details, patient history, symptoms, demographics, or
-prior studies. The image model returns only a class and score; it does not
-localize a finding or analyze the complete MRI/CT study.
-
-### 6.2 Clinician-facing wording and limitations
-
-The application presents the result as a research-model classification and
-uses a clinician-oriented review checklist. It does not tell a clinician to
-consult another provider or website, and it does not prescribe tests,
-treatment, referral timing, or patient-specific management. The checklist is
-workflow support only; it is not a validated clinical protocol. The
-classification must not be presented as a confirmed diagnosis or a
-radiologist's report.
-
-## 7. Software Architecture and Project Structure
-
-```text
-Multimodal/
-├── README.md
-├── project_report.md                 # This report
-├── backend/
-│   ├── .env.example                  # Environment-variable template
-│   ├── package.json
-│   ├── server.js                     # Express API, auth, uploads, analysis routes
-│   ├── middleware/
-│   │   └── authMiddleware.js          # JWT validation and account lookup
-│   ├── models/
-│   │   ├── Analysis.js                # MongoDB analysis schema
-│   │   └── User.js                    # MongoDB user schema
-│   ├── services/
-│   │   └── pythonService.js            # Starts Python prediction process
-│   ├── data/                          # Empty directory in the inspected tree
-│   └── uploads/                       # Temporary and retained image uploads
-├── frontend/
-│   ├── package.json
-│   ├── vite.config.js
-│   └── src/
-│       ├── App.jsx                     # App routing
-│       ├── main.jsx                    # Frontend entry point
-│       ├── components/                 # Shared UI, auth, disclaimer, history
-│       ├── context/                    # Authentication state
-│       ├── layouts/                    # Public, auth, and dashboard layouts
-│       ├── pages/                      # Home, diagnosis, results, history, etc.
-│       ├── services/                   # API clients for auth and diagnosis
-│       └── utils/
-│           └── clinicalGuidance.js      # Fixed clinician-review checklist
-└── python_files/
-    ├── requirements.txt
-    ├── datasets/                       # Local source image datasets
-    │   ├── Brain Tumor Dataset/
-    │   │   ├── Training/<class>/
-    │   │   └── Testing/<class>/
-    │   └── Lung Cancer Dataset/<class>/
-    ├── processed_data/                 # Generated train/validation/test copies
-    │   ├── brain_tumor_mri/
-    │   └── lung_cancer_ct/
-    ├── prepare_brain_mri_dataset.py    # Brain MRI validation and split/copy
-    ├── train_brain_mri_model.py        # EfficientNet brain MRI training
-    ├── brain_mri_predict.py            # Brain MRI Keras inference
-    ├── prepare_lung_ct_dataset.py      # Lung CT seeded split/copy
-    ├── train_lung_ct_model.py          # EfficientNet lung CT training
-    ├── train_classifier.py             # Older HGB lung training
-    ├── lung_ct_predict.py              # Current backend CT prediction script
-    └── lung_cancer_model.ipynb         # Notebook invoking the CT trainer
-```
-
-The source datasets, processed image splits, uploaded images, and model artifacts are local/generated data rather than source-code modules. Actual local data and artifact files can vary by machine and should be handled according to their respective licenses and privacy requirements.
-
-## 8. Technologies
-
-| Layer | Technologies observed in the repository |
+| Component | Technology used |
 |---|---|
 | Frontend | React, React Router, Vite, Tailwind CSS |
-| Backend | Node.js, Express, Multer |
-| Authentication | bcrypt password hashing, JSON Web Tokens |
-| Persistence | MongoDB with Mongoose |
-| Deep-learning models | TensorFlow/Keras, EfficientNetB0 |
-| Classical lung model | NumPy, Pillow, scikit-learn HistGradientBoostingClassifier, joblib |
-| Data handling | Directory-based labels, seeded Python random splits, TensorFlow image datasets |
+| API server | Node.js, Express |
+| Upload handling | Multer |
+| Authentication | bcrypt password hashing, JWT |
+| Database | MongoDB, Mongoose |
+| Brain MRI model | TensorFlow/Keras, EfficientNetB0 |
+| Lung CT model used by backend | scikit-learn HistGradientBoostingClassifier, joblib |
+| Image and numerical processing | Pillow, NumPy |
+| Explanation methods | SHAP GradientExplainer and KernelExplainer |
+| Python dependencies | Listed in `python_files/requirements.txt` |
 
-The Python `requirements.txt` lists TensorFlow, NumPy, and Pillow. The older classical training/inference code imports scikit-learn and joblib, but those are not listed explicitly in that requirements file. The environment needed to run that path should be made reproducible with explicit dependency versions.
+The repository does not specify a required computer, GPU, RAM, or deployment server. The hardware used for the final training run should be recorded by the project team rather than inferred from the source code.
 
-### 8.1 Local setup and reproduction
+## Chapter 7. Results and Discussion
 
-The repository README documents the following Windows workflow. Commands are shown from the indicated project directories:
+### 7.1 Implemented result
 
-```powershell
-# Python models (from python_files/)
-python -m pip install -r requirements.txt
-python prepare_brain_mri_dataset.py
-python train_brain_mri_model.py
-python prepare_lung_ct_dataset.py
-python train_lung_ct_model.py
+The implemented workflow connects the browser, API, database, and Python prediction scripts. A successful analysis returns one class and one score for the selected modality, saves the image and analysis record, and makes the SHAP data available on the result page. The application also supports account creation and login, profile and history screens, and printing the displayed summary.
 
-# Backend (from backend/)
-Copy-Item .env.example .env
-# Configure MONGODB_URI and a private JWT_SECRET in .env before starting.
-npm install
-npm run dev
+### 7.2 Model evaluation results
 
-# Frontend (from frontend/, in a separate terminal)
-npm install
-npm run dev
-```
+The training scripts call `model.evaluate()` for the EfficientNet test splits and print the resulting metrics. The older lung training script can print test accuracy and a classification report. However, the repository does not include verified output logs, confusion matrices, or per-class test metrics. Model files being present locally are not enough to establish how they were trained or how well they performed.
 
-The backend defaults to port 5100 and the Vite frontend to port 5174. The frontend development server forwards `/api` requests to the backend. Brain MRI fine-tuning can be run after an initial model has been saved:
+For that reason, this report does not state an accuracy, precision, recall, F1-score, or clinical performance claim. Those values should be added only after a controlled training and evaluation run, with the dataset version, split, dependencies, and output logs recorded. The current lung web output should not be reported as the result of the EfficientNet lung script.
 
-```powershell
-python train_brain_mri_model.py --fine-tune-existing
-```
+### 7.3 Main limitations
 
-Training a modality is required before that modality can be analyzed. The CT integration caveat in Section 5.2 still applies: the documented EfficientNet training command does not make the current backend predictor load the resulting `.keras` model.
+- The application classifies one raster image, not a full imaging study.
+- The local data split is image-based; patient-level separation and duplicate checks are not established.
+- The lung dataset is small and imbalanced, and its source and license need to be documented.
+- The lung training script and live backend use different model types.
+- The displayed model score is not shown to be calibrated.
+- SHAP attribution is reference-dependent and is not lesion localization.
+- No clinical validation, prospective study, or regulatory assessment is documented.
+- Patient IDs and scan images are sensitive data. The prototype configuration is not, by itself, evidence of production-grade privacy or security controls.
 
-## 9. Experimental Results and Reproducibility
+## Chapter 8. Conclusion and Future Work
 
-The training scripts are configured to evaluate the EfficientNet models on their test partitions and print metric dictionaries. The older classical lung training script prints training accuracy and, if a test split is present, test accuracy and a classification report. However, the repository does not include verified training logs, test metric values, confusion matrices, per-class precision/recall, calibration analyses, or independent external-validation results.
+MediScan AI is a working research prototype that combines separate brain MRI and lung CT image-classification paths with a browser interface for uploading images and reviewing saved results. Its main implemented features are account-based access, one-image analysis, result history, model-score display, SHAP attribution, and a printable summary.
 
-Although model artifact files are present locally, their existence does not prove which script produced the current artifact, whether the artifacts correspond to the current dataset split, or how they performed. No accuracy or other performance value is therefore reported here. Such values must be obtained by a controlled, reproducible run with versioned data, dependencies, split definitions, and logs. In particular, CT results must not be attributed to EfficientNet unless the backend inference code is changed to load that exact Keras model and the prediction path is tested end-to-end.
+The most important issue to resolve before interpreting lung CT results is the mismatch between the EfficientNet training script and the handcrafted-feature model used by the backend. The team should select the intended CT model and align its training code, saved artifact, preprocessing, class order, and prediction route. A reproducible evaluation should then report per-class metrics on a patient-independent test set and include dataset provenance.
 
-For a reproducible experiment, record at minimum:
+Further work should also validate image handling on representative inputs, assess confidence calibration, test the explanation displays with domain experts, document data permissions and privacy controls, and obtain clinical and institutional guidance before considering any real-world use. Until those steps are completed, outputs should remain educational and research-only.
 
-- exact dataset name, source URL/citation, license, download date, and any filtering;
-- dataset manifest with class counts and patient/study grouping policy;
-- code revision and complete dependency versions;
-- seeds and split membership;
-- training/validation curves and final test metrics;
-- class-wise confusion matrix, precision, recall, F1-score, and support;
-- calibration method and calibration metrics if confidence is displayed as probability;
-- independent-site or external validation where possible;
-- model artifact hash and the exact inference implementation used.
+## References
 
-## 10. Limitations and Risks
+1. Tan, M. and Le, Q. V. “EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks.” *Proceedings of the 36th International Conference on Machine Learning*, PMLR 97, 2019, pp. 6105–6114.
+2. Lundberg, S. M. and Lee, S.-I. “A Unified Approach to Interpreting Model Predictions.” *Advances in Neural Information Processing Systems 30*, 2017.
+3. Project implementation: `python_files/train_brain_mri_model.py`, `python_files/brain_mri_predict.py`, `python_files/train_lung_ct_model.py`, `python_files/train_classifier.py`, `python_files/lung_ct_predict.py`, `python_files/shap_explanations.py`, `backend/server.js`, and `frontend/src`.
 
-1. **Not clinically validated:** no prospective study, clinician adjudication, regulatory approval, or clinical safety evaluation is documented.
-2. **No verified performance report:** the repository does not contain test results that can substantiate accuracy claims.
-3. **CT training/inference mismatch:** the web backend calls the handcrafted-feature/joblib predictor rather than the newer EfficientNet CT model.
-4. **CT training/inference mismatch:** the backend uses the handcrafted-feature joblib model, not the EfficientNet CT model; missing models now fail explicitly, and filenames no longer affect predictions.
-5. **Small and imbalanced lung dataset:** only 1,535 images are present, with class counts from 120 to 631. Image-level random splits may not represent independent patients.
-6. **Single-image input:** one resized raster image is not equivalent to reviewing a full CT or MRI study. There is no DICOM series handling, 3D context, or study-level aggregation in the described workflow.
-7. **Possible dataset leakage or source bias:** patient-level independence, duplicate images, acquisition sites, and demographic representation are not verified in the code.
-8. **Confidence interpretation:** a softmax score or `predict_proba()` value should not be assumed calibrated or interpreted as clinical certainty.
-9. **Checklist is not a clinical protocol:** the frontend checklist is fixed text, not patient-specific, and has not been clinically validated as a workflow.
-10. **Data governance:** patient identifiers and scan images are sensitive. A local demo architecture and per-user authorization are not a substitute for a documented threat model, secure deployment, consent, retention, and audit controls.
-
-## 11. Recommended Next Steps
-
-### Before presenting quantitative findings
-
-- Run the training and evaluation pipelines from a clean environment and preserve complete logs.
-- Verify split membership and, where possible, split by patient/study rather than individual image.
-- Report per-class metrics and confidence intervals; compare against an appropriate baseline.
-- Verify duplicate and near-duplicate images across partitions.
-- Establish and cite dataset provenance, licensing, label definitions, and any preprocessing.
-
-### Before relying on CT model output
-
-- Choose one CT classifier as the intended model.
-- Make the training artifact, class ordering, preprocessing, and backend predictor consistent.
-- Fail explicitly when model files or dependencies are missing.
-- Add integration tests proving the backend loads the chosen model and that input filenames do not influence prediction.
-
-### Before showing the clinician review checklist in a clinical setting
-
-- Validate the intended workflow, checklist wording, and printed-summary design with representative clinicians.
-- Clearly distinguish the research-model classification from a verified radiology interpretation.
-- Ensure that low-confidence or out-of-distribution inputs are handled safely; currently the explicit low-confidence UI rule is limited to brain MRI.
-
-### Before any real-world deployment
-
-- Define privacy, consent, retention, access, and incident-response policies.
-- Review authentication secrets and deployment configuration.
-- Validate upload content beyond client-provided MIME types and test resource limits.
-- Conduct security, usability, accessibility, and clinical safety reviews.
-- Seek appropriate institutional and regulatory guidance for the intended jurisdiction and use.
-
-## 12. Conclusion
-
-MediScan AI combines two image-classification experiments with a web workflow for patient-linked analysis history and a fixed clinician-review checklist. The newer model-development path uses ImageNet-initialized EfficientNetB0 for four-class brain MRI and five-class lung CT classification, with class-weighted training and held-out evaluation in code. The repository also retains a separate handcrafted-feature gradient-boosting lung model.
-
-The project is suitable for continued educational and methodological development, but its current evidence does not support diagnostic or clinical performance claims. The most urgent technical issue for interpreting results is the mismatch between the EfficientNet lung CT training artifact and the older model used by the backend. Reproducible evaluation, patient-level data validation, documented dataset provenance, and clinician validation of the intended workflow are necessary next steps.
-
-## References and evidence
-
-### Project implementation
-
-This report is grounded in the local repository files, principally:
-
-- `README.md`
-- `python_files/prepare_brain_mri_dataset.py`
-- `python_files/train_brain_mri_model.py`
-- `python_files/brain_mri_predict.py`
-- `python_files/prepare_lung_ct_dataset.py`
-- `python_files/train_lung_ct_model.py`
-- `python_files/train_classifier.py`
-- `python_files/lung_ct_predict.py`
-- `backend/server.js`
-- `backend/services/pythonService.js`
-- `backend/models/Analysis.js`
-- `backend/models/User.js`
-- `frontend/src/pages/DiagnosisPage.jsx`
-- `frontend/src/utils/clinicalGuidance.js`
-
-### Model reference
-
-Tan, M., & Le, Q. V. (2019). *EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks*. Proceedings of the 36th International Conference on Machine Learning, PMLR 97, 6105–6114. This reference describes the EfficientNet family; it does not validate this project's medical-image dataset, model weights, or performance.
-
-### Publication items still to complete
-
-Before using this as a formal research paper, add the dataset's verified citations and license, institutional author details, experimental run information, computed results, and any ethics/approval statement applicable to the data and intended study. Do not present placeholder or unverified performance claims.
+**Before submission:** replace the student and guide placeholders, confirm the official dataset citations and licenses, and add results only after running and saving a reproducible evaluation. Do not copy the sample report’s names, project claims, or performance numbers.

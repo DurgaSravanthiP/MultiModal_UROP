@@ -73,6 +73,9 @@
 .muted {
   color: #728494;
 }
+.shap-report-prose {
+  display: none;
+}
 @media print {
   body * {
     visibility: hidden !important;
@@ -97,6 +100,45 @@
   .analysis-result a,
   .clinician-report button {
     display: none !important;
+  }
+  body.print-shap-report * {
+    visibility: hidden !important;
+  }
+  body.print-shap-report .shap-report,
+  body.print-shap-report .shap-report * {
+    visibility: visible !important;
+  }
+  body.print-shap-report .shap-report {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+  body.print-shap-report .shap-report button {
+    display: none !important;
+  }
+  body.print-shap-report .shap-report-prose {
+    display: block;
+    margin-bottom: 16px;
+    color: #263746;
+    font-size: 11pt;
+    line-height: 1.5;
+  }
+  body.print-shap-report .shap-report-prose h1 {
+    margin: 0 0 10px;
+    color: #18324b;
+    font-size: 18pt;
+  }
+  body.print-shap-report .shap-report-prose h2 {
+    margin: 14px 0 5px;
+    color: #18324b;
+    font-size: 12pt;
+  }
+  body.print-shap-report .shap-report-prose p {
+    margin: 5px 0;
   }
 }
 .field-label {

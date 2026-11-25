@@ -97,7 +97,98 @@ function ImageExplanation({ explanation, imageUrl }) {
   );
 }
 
-export default function ShapExplanation({ explanation, imageUrl }) {
+function printShapReport() {
+  const printClass = "print-shap-report";
+  const cleanup = () => document.body.classList.remove(printClass);
+
+  document.body.classList.add(printClass);
+  window.addEventListener("afterprint", cleanup, { once: true });
+  window.print();
+}
+
+function formatContribution(feature) {
+  const value = feature.value * 100;
+  return `${feature.name} (${value > 0 ? "+" : ""}${value.toFixed(2)} percentage points)`;
+}
+
+function getFeatureNarrative(features, targetClass) {
+  const validFeatures = features.filter(
+    (feature) => Number.isFinite(feature.value) && typeof feature.name === "string",
+  );
+  const increasing = validFeatures
+    .filter((feature) => feature.value > 0)
+    .sort((a, b) => b.value - a.value);
+  const decreasing = validFeatures
+    .filter((feature) => feature.value < 0)
+    .sort((a, b) => a.value - b.value);
+
+  return (
+    <div className="shap-report-prose">
+      <h2>SHAP explanation report</h2>
+      <p>
+        SHAP describes how input features influenced the model score for the
+        <strong>{targetClass}</strong> class compared with the explanation
+        baseline. Positive values push the score toward that class; negative
+        values push it away. These values describe model behavior, not clinical
+        evidence.
+      </p>
+      {increasing.length > 0 ? (
+        <p>
+          Among the {validFeatures.length} reported image-derived features, the
+          strongest factors pushing the score toward {targetClass} were:{" "}
+          {increasing.slice(0, 3).map(formatContribution).join("; ")}.
+        </p>
+      ) : (
+        <p>
+          None of the reported image-derived features pushed the score toward{" "}
+          {targetClass}.
+        </p>
+      )}
+      {decreasing.length > 0 ? (
+        <p>
+          The strongest factors pushing the score away from {targetClass} were:{" "}
+          {decreasing.slice(0, 3).map(formatContribution).join("; ")}.
+        </p>
+      ) : (
+        <p>
+          No reported feature pushed the score away from {targetClass}.
+        </p>
+      )}
+      <p>
+        The list shows the strongest reported feature contributions, not
+        anatomical findings. It should not be used by itself to diagnose,
+        locate disease, or guide treatment.
+      </p>
+    </div>
+  );
+}
+
+function getImageNarrative() {
+  return (
+    <div className="shap-report-prose">
+      <h2>SHAP explanation report</h2>
+      <p>
+        The overlay highlights image regions that influenced the model score
+        for the selected class relative to the explanation baseline. Red
+        regions push the score upward, while blue regions push it downward.
+        Color intensity is normalized for display and is not a calibrated
+        measure of certainty.
+      </p>
+      <p>
+        These highlighted regions are model attributions, not tumor boundaries,
+        anatomical findings, or a clinical localization. The visualization
+        does not establish a diagnosis and must be interpreted with the full
+        study by a qualified clinician.
+      </p>
+    </div>
+  );
+}
+
+export default function ShapExplanation({
+  explanation,
+  imageUrl,
+  reportDetails = {},
+}) {
   if (!explanation) {
     return (
       <section className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -116,19 +207,51 @@ export default function ShapExplanation({ explanation, imageUrl }) {
     imageUrl;
   const isFeatureExplanation =
     explanation.kind === "features" && Array.isArray(explanation.features);
+  const reportDate = new Date().toLocaleString();
+  const analyzedDate = reportDetails.createdAt
+    ? new Date(reportDetails.createdAt).toLocaleString()
+    : "Unavailable";
+  const score = Number(reportDetails.confidence);
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 md:p-5">
-      <div>
-        <p className="text-xs font-bold uppercase tracking-wider text-teal-700">
-          SHAP explanation
+    <section className="shap-report rounded-2xl border border-slate-200 bg-white p-4 md:p-5">
+      <div className="shap-report-prose">
+        <h1>SHAP Explanation Report</h1>
+        <p>
+          <strong>Patient ID:</strong> {reportDetails.patientId || "Unavailable"}
+          {" · "}
+          <strong>Scan:</strong> {reportDetails.scanType || "Unavailable"}
         </p>
-        <h4 className="mt-1 text-sm font-bold text-slate-900">
-          Features influencing {explanation.targetClass}
-        </h4>
-        <p className="mt-1 text-xs leading-relaxed text-slate-600">
-          {explanation.note}
+        <p>
+          <strong>Model output:</strong> {reportDetails.prediction || "Unavailable"}
+          {Number.isFinite(score) &&
+            ` · Model score: ${score.toFixed(2)}% (not calibrated probability)`}
         </p>
+        <p>
+          <strong>Analysis time:</strong> {analyzedDate}
+          {" · "}
+          <strong>Report generated:</strong> {reportDate}
+        </p>
+      </div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-teal-700">
+            SHAP explanation
+          </p>
+          <h4 className="mt-1 text-sm font-bold text-slate-900">
+            Features influencing {explanation.targetClass}
+          </h4>
+          <p className="mt-1 text-xs leading-relaxed text-slate-600">
+            {explanation.note}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={printShapReport}
+          className="shrink-0 rounded-lg border border-teal-200 px-3 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-50"
+        >
+          Generate SHAP report
+        </button>
       </div>
 
       {isImageExplanation ? (
@@ -140,6 +263,10 @@ export default function ShapExplanation({ explanation, imageUrl }) {
           The SHAP explanation data is incomplete or does not match this scan.
         </p>
       )}
+
+      {isImageExplanation && getImageNarrative()}
+      {isFeatureExplanation &&
+        getFeatureNarrative(explanation.features, explanation.targetClass)}
 
       <p className="mt-3 border-t border-slate-100 pt-3 text-[11px] leading-relaxed text-slate-500">
         SHAP describes how the model used its input relative to the stated
